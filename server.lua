@@ -1699,7 +1699,7 @@ ForceReleasePlayerFromJail = function(playerId, reason)
     end
 
     reason = reason or "Released by server"
-    local playerIsOnline = GetPlayerName(pIdNum) ~= nil
+    local playerIsOnline = SafeGetPlayerName(pIdNum) ~= nil
 
     -- Log the attempt
     Log(string.format("Attempting to release player %s from jail. Reason: %s. Online: %s", pIdNum, reason, tostring(playerIsOnline)), "info", "CNR_SERVER")
@@ -1753,7 +1753,7 @@ CreateThread(function() -- Jail time update loop
             local pIdNum = tonumber(playerIdKey) -- Ensure we use the key from pairs()
 
             if pIdNum and pIdNum > 0 then
-                if GetPlayerName(pIdNum) ~= nil then -- Check player online
+                if SafeGetPlayerName(pIdNum) ~= nil then -- Check player online
                     jailInstanceData.remainingTime = jailInstanceData.remainingTime - 1
                     if jailInstanceData.remainingTime <= 0 then
                         ForceReleasePlayerFromJail(pIdNum, "Sentence served")
@@ -1819,7 +1819,7 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
 
     if spawnLocation then
         TriggerClientEvent('cnr:spawnPlayerAt', src, spawnLocation, spawnHeading, selectedRole)
-        Log(string.format("Player %s spawned as %s at %s", GetPlayerName(src), selectedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
+        Log(string.format("Player %s spawned as %s at %s", SafeGetPlayerName(src), selectedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
     else
         Log(string.format("No spawn point found for role %s for player %s", selectedRole, src), "warn", "CNR_SERVER")
         TriggerClientEvent('cnr:roleSelected', src, false, "No spawn point configured for this role.")
@@ -2182,14 +2182,14 @@ CreateThread(function()
 
         -- Save all players who have pending saves
         for playerId, needsSave in pairs(playersSavePending) do
-            if needsSave and GetPlayerName(playerId) then
+            if needsSave and SafeGetPlayerName(playerId) then
                 SavePlayerDataImmediate(playerId, "periodic")
             end
         end
 
         -- Clean up offline players from pending saves
         for playerId, _ in pairs(playersSavePending) do
-            if not GetPlayerName(playerId) then
+            if not SafeGetPlayerName(playerId) then
                 playersSavePending[playerId] = nil
             end
         end
@@ -2421,7 +2421,7 @@ AddEventHandler('cnr:playerSpawned', function()
     -- Ensure data sync after a brief delay for client readiness
     Citizen.SetTimeout(Constants.TIME_MS.SECOND * 2, function()
         -- Validate player is still online
-        if not GetPlayerName(src) then return end
+        if not SafeGetPlayerName(src) then return end
         
         -- Sync player data to client using PlayerManager
         PlayerManager.SyncPlayerDataToClient(src)
@@ -3193,17 +3193,17 @@ AddEventHandler('cnr:bankTransfer', function(targetId, amount)
     AddTransactionHistory(playerLicense, {
         type = "transfer_out",
         amount = totalCost,
-        description = "Transfer to " .. GetPlayerName(targetId) .. " (+$" .. Config.Banking.transferFee .. " fee)"
+        description = "Transfer to " .. SafeGetPlayerName(targetId) .. " (+$" .. Config.Banking.transferFee .. " fee)"
     })
     
     AddTransactionHistory(targetLicense, {
         type = "transfer_in",
         amount = amount,
-        description = "Transfer from " .. GetPlayerName(src)
+        description = "Transfer from " .. SafeGetPlayerName(src)
     })
     
     TriggerClientEvent('cnr:showNotification', src, 'Transferred $' .. amount .. ' (Fee: $' .. Config.Banking.transferFee .. ')', 'success')
-    TriggerClientEvent('cnr:showNotification', targetId, 'Received $' .. amount .. ' from ' .. GetPlayerName(src), 'success')
+    TriggerClientEvent('cnr:showNotification', targetId, 'Received $' .. amount .. ' from ' .. SafeGetPlayerName(src), 'success')
     
     TriggerClientEvent('cnr:updateBankBalance', src, senderAccount.balance)
     TriggerClientEvent('cnr:updateBankBalance', targetId, receiverAccount.balance)
@@ -3426,7 +3426,7 @@ AddEventHandler('cnr:hackATM', function(atmId)
                 TriggerClientEvent('cnr:policeAlert', playerId, {
                     type = "ATM Hack",
                     location = playerCoords,
-                    suspect = GetPlayerName(src)
+                    suspect = SafeGetPlayerName(src)
                 })
             end
         end
@@ -3660,7 +3660,7 @@ AddEventHandler('cnr:joinHeistCrew', function(crewId, role)
     
     -- Notify crew members
     for _, memberId in pairs(crew.members) do
-        TriggerClientEvent('cnr:showNotification', memberId, GetPlayerName(src) .. ' joined as ' .. roleConfig.name, 'success')
+        TriggerClientEvent('cnr:showNotification', memberId, SafeGetPlayerName(src) .. ' joined as ' .. roleConfig.name, 'success')
         TriggerClientEvent('cnr:updateCrewInfo', memberId, crew)
     end
 end)
@@ -3700,7 +3700,7 @@ AddEventHandler('cnr:leaveHeistCrew', function()
     else
         -- Notify remaining members
         for _, memberId in pairs(crew.members) do
-            TriggerClientEvent('cnr:showNotification', memberId, GetPlayerName(src) .. ' left the crew', 'info')
+            TriggerClientEvent('cnr:showNotification', memberId, SafeGetPlayerName(src) .. ' left the crew', 'info')
             TriggerClientEvent('cnr:updateCrewInfo', memberId, crew)
         end
     end
