@@ -33,7 +33,7 @@ local inventoryStats = {
 
 local function LogInventory(playerId, operation, message, level)
     level = level or Constants.LOG_LEVELS.INFO
-    local playerName = GetPlayerName(playerId) or "Unknown"
+    local playerName = SafeGetPlayerName(playerId) or "Unknown"
     if level == Constants.LOG_LEVELS.ERROR or level == Constants.LOG_LEVELS.WARN then
         Log(string.format("[CNR_SECURE_INVENTORY] [%s] Player %s (%d) - %s: %s", 
             string.upper(level), playerName, playerId, operation, message))
@@ -217,7 +217,7 @@ local transactionStats = {
 
 local function LogTransaction(playerId, operation, message, level)
     level = level or Constants.LOG_LEVELS.INFO
-    local playerName = GetPlayerName(playerId) or "Unknown"
+    local playerName = SafeGetPlayerName(playerId) or "Unknown"
     if level == Constants.LOG_LEVELS.ERROR or level == Constants.LOG_LEVELS.WARN then
         Log(string.format("[CNR_SECURE_TRANSACTIONS] [%s] Player %s (%d) - %s: %s", 
             string.upper(level), playerName, playerId, operation, message))

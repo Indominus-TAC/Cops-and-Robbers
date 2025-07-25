@@ -153,18 +153,18 @@ function PlaceBounty(targetId)
         wantedLevel = wantedLevel,
         placedTime = os.time(),
         expireTime = expireTime,
-        name = GetPlayerName(targetId)
+        name = SafeGetPlayerName(targetId)
     }
     
     -- Notify all cops about the bounty
     for cop, _ in pairs(copsOnDuty) do
-        TriggerClientEvent('cnr:notification', cop, "A $" .. bountyAmount .. " bounty has been placed on " .. GetPlayerName(targetId) .. "!")
+        TriggerClientEvent('cnr:notification', cop, "A $" .. bountyAmount .. " bounty has been placed on " .. SafeGetPlayerName(targetId) .. "!")
     end
     
     -- Notify the target
     TriggerClientEvent('cnr:notification', targetId, "A $" .. bountyAmount .. " bounty has been placed on you!", "warning")
     
-    return true, "Bounty of $" .. bountyAmount .. " placed on " .. GetPlayerName(targetId)
+    return true, "Bounty of $" .. bountyAmount .. " placed on " .. SafeGetPlayerName(targetId)
 end
 
 -- Claim a bounty when a cop arrests a player with a bounty
@@ -182,7 +182,7 @@ function ClaimBounty(copId, targetId)
     AddPlayerXP(copId, bountyAmount / 100) -- 1 XP per $100 of bounty
     
     -- Notify the cop
-    TriggerClientEvent('cnr:notification', copId, "You claimed a $" .. bountyAmount .. " bounty on " .. GetPlayerName(targetId) .. "!")
+    TriggerClientEvent('cnr:notification', copId, "You claimed a $" .. bountyAmount .. " bounty on " .. SafeGetPlayerName(targetId) .. "!")
     
     -- Remove the bounty
     activeBounties[targetId] = nil
@@ -569,7 +569,7 @@ LoadPlayerData = function(playerId)
     end
 
     -- Check if player is still online
-    if not GetPlayerName(pIdNum) then
+    if not SafeGetPlayerName(pIdNum) then
         Log(string.format("LoadPlayerData: Player %s is not online", pIdNum), "warn", "CNR_SERVER")
         return
     end
@@ -581,7 +581,7 @@ LoadPlayerData = function(playerId)
     if license then
         filename = "player_data/" .. license:gsub(":", "") .. ".json"
     else
-        Log(string.format("LoadPlayerData: CRITICAL - Could not find license for player %s (Name: %s) even after playerConnecting. Attempting PID fallback (pid_%s.json), but this may lead to data inconsistencies or load failures if server IDs are not static.", pIdNum, GetPlayerName(pIdNum) or "N/A", pIdNum), "error", "CNR_SERVER")
+        Log(string.format("LoadPlayerData: CRITICAL - Could not find license for player %s (Name: %s) even after playerConnecting. Attempting PID fallback (pid_%s.json), but this may lead to data inconsistencies or load failures if server IDs are not static.", pIdNum, SafeGetPlayerName(pIdNum) or "N/A", pIdNum), "error", "CNR_SERVER")
         -- The playerConnecting handler should ideally prevent this state for legitimate players.
         -- If this occurs, it might be due to:
         -- 1. A non-player entity somehow triggering this (e.g., faulty admin command or event).
@@ -743,12 +743,12 @@ SetPlayerRole = function(playerId, role, skipNotify)
     end
 
     -- Check if player is still online
-    if not GetPlayerName(pIdNum) then
+    if not SafeGetPlayerName(pIdNum) then
         Log(string.format("SetPlayerRole: Player %s is not online", pIdNum), "warn", "CNR_SERVER")
         return
     end
 
-    local playerName = GetPlayerName(pIdNum) or "Unknown"
+    local playerName = SafeGetPlayerName(pIdNum) or "Unknown"
     -- Log(string.format("SetPlayerRole DEBUG: Attempting to set role for pIdNum: %s, playerName: %s, to newRole: %s. Current role in playersData: %s", pIdNum, playerName, role, (playersData[pIdNum] and playersData[pIdNum].role or "nil_or_no_pData")), "info")
 
     local pData = playersData[pIdNum] -- Get pData directly
@@ -778,7 +778,7 @@ SetPlayerRole = function(playerId, role, skipNotify)
             
             -- Notify all cops that this player is no longer wanted
             for copId, _ in pairs(copsOnDuty) do
-                if GetPlayerName(copId) ~= nil then
+                if SafeGetPlayerName(copId) ~= nil then
                     SafeTriggerClientEvent('cnr:updatePoliceBlip', copId, pIdNum, nil, 0, false)
                 end
             end
@@ -1006,7 +1006,7 @@ CreateThread(function() -- Bounty Increase & Expiry Loop
                 -- local player = GetPlayerFromServerId(playerId) -- Not needed if player is offline, bounty can still tick or expire
                 local pData = GetCnrPlayerData(playerId)
                 local wantedData = wantedPlayers[playerId]
-                local isPlayerOnline = GetPlayerName(tostring(playerId)) ~= nil -- Check if player is online
+                local isPlayerOnline = SafeGetPlayerName(tostring(playerId)) ~= nil -- Check if player is online
 
                 if isPlayerOnline and pData and wantedData and wantedData.stars >= Config.BountySettings.wantedLevelThreshold and currentTime < bountyData.expiresAt then
                     if bountyData.amount < Config.BountySettings.maxBounty then
@@ -1078,7 +1078,7 @@ UpdatePlayerWantedLevel = function(playerId, crimeKey, officerId)
         return
     end
 
-    if GetPlayerName(pIdNum) == nil or not IsPlayerRobber(pIdNum) then return end -- Check player online using GetPlayerName
+    if SafeGetPlayerName(pIdNum) == nil or not IsPlayerRobber(pIdNum) then return end -- Check player online using SafeGetPlayerName
 
     local crimeConfig = Config.WantedSettings.crimes[crimeKey]
     if not crimeConfig then
@@ -1139,7 +1139,7 @@ SafeTriggerClientEvent('cnr:wantedLevelSync', pIdNum, currentWanted) -- Syncs wa
     SafeTriggerClientEvent('cnr:showWantedNotification', pIdNum, newStars, currentWanted.wantedLevel, uiLabel)
 
     local crimeDescription = (type(crimeConfig) == "table" and crimeConfig.description) or crimeKey:gsub("_"," "):gsub("%a", string.upper, 1)
-    local robberPlayerName = GetPlayerName(pIdNum) or "Unknown Suspect"
+    local robberPlayerName = SafeGetPlayerName(pIdNum) or "Unknown Suspect"
     local robberPed = GetPlayerPed(pIdNum) -- Get ped once
     local robberCoords = robberPed and GetEntityCoords(robberPed) or nil
 
@@ -1158,7 +1158,7 @@ SafeTriggerClientEvent('cnr:wantedLevelSync', pIdNum, currentWanted) -- Syncs wa
 
         -- Alert Human Cops (existing logic)
         for copId, _ in pairs(copsOnDuty) do
-            if GetPlayerName(copId) ~= nil then -- Check cop is online
+            if SafeGetPlayerName(copId) ~= nil then -- Check cop is online
                 SafeTriggerClientEvent('chat:addMessage', copId, { args = {"^5Police Alert", string.format("Suspect %s (%s) is %d-star wanted for %s.", robberPlayerName, pIdNum, newStars, crimeDescription)} })
                 SafeTriggerClientEvent('cnr:updatePoliceBlip', copId, pIdNum, robberCoords, newStars, true)
             end
@@ -1197,7 +1197,7 @@ ReduceWantedLevel = function(playerId, amount)
             SafeTriggerClientEvent('cnr:hideWantedNotification', pIdNum)
             SafeTriggerClientEvent('chat:addMessage', pIdNum, { args = {"^2Wanted", "You are no longer wanted."} })
             for copId, _ in pairs(copsOnDuty) do
-                if GetPlayerName(copId) ~= nil then -- Check cop is online
+                if SafeGetPlayerName(copId) ~= nil then -- Check cop is online
                     SafeTriggerClientEvent('cnr:updatePoliceBlip', copId, pIdNum, nil, 0, false)
                 end
             end
@@ -1214,7 +1214,7 @@ CreateThread(function() -- Wanted level decay with cop sight detection
         for playerIdStr, data in pairs(wantedPlayers) do 
             local playerId = tonumber(playerIdStr)
             -- Only apply decay to online robbers
-            if GetPlayerName(playerId) ~= nil and IsPlayerRobber(playerId) then
+            if SafeGetPlayerName(playerId) ~= nil and IsPlayerRobber(playerId) then
                 if data.wantedLevel > 0 and (currentTime - data.lastCrimeTime) > (Config.WantedSettings.noCrimeCooldownMs / 1000) then
                     -- Check if any cops are nearby (cop sight detection)
                     local playerPed = GetPlayerPed(playerId)
@@ -1226,7 +1226,7 @@ CreateThread(function() -- Wanted level decay with cop sight detection
                         
                         -- Check distance to all online cops with caching
                         for copId, _ in pairs(copsOnDuty) do
-                            if GetPlayerName(copId) ~= nil then -- Cop is online
+                            if SafeGetPlayerName(copId) ~= nil then -- Cop is online
                                 local copPed = GetPlayerPed(copId)
                                 if copPed and copPed > 0 and DoesEntityExist(copPed) then
                                     local copCoords = GetEntityCoords(copPed)
@@ -1261,7 +1261,7 @@ CreateThread(function() -- Wanted level decay with cop sight detection
                         ReduceWantedLevel(playerId, Config.WantedSettings.decayRatePoints)
                     end
                 end
-            elseif GetPlayerName(playerId) == nil then
+            elseif SafeGetPlayerName(playerId) == nil then
                 -- Player is offline, keep their wanted level but don't decay it
                 -- This preserves wanted levels across disconnections
             elseif not IsPlayerRobber(playerId) then
@@ -1282,7 +1282,7 @@ CreateThread(function()
         Wait(1000) -- Check every second
         
         for playerId, _ in pairs(robbersActive) do
-            if GetPlayerName(playerId) ~= nil then -- Player is online
+            if SafeGetPlayerName(playerId) ~= nil then -- Player is online
                 local playerPed = GetPlayerPed(playerId)
                 if playerPed and playerPed > 0 and DoesEntityExist(playerPed) then
                     local vehicle = GetVehiclePedIsIn(playerPed, false)
@@ -1387,7 +1387,7 @@ CreateThread(function()
         
         if Config.RestrictedAreas and #Config.RestrictedAreas > 0 then
             for playerId, _ in pairs(robbersActive) do
-                if GetPlayerName(playerId) ~= nil then -- Player is online
+                if SafeGetPlayerName(playerId) ~= nil then -- Player is online
                     local playerPed = GetPlayerPed(playerId)
                     if playerPed and playerPed > 0 and DoesEntityExist(playerPed) then
                         local playerCoords = GetEntityCoords(playerPed)
@@ -1525,7 +1525,7 @@ RegisterCommand('reportcrime', function(source, args, rawCommand)
         return
     end
     
-    if not GetPlayerName(targetId) then
+    if not SafeGetPlayerName(targetId) then
         SafeTriggerClientEvent('chat:addMessage', src, { args = {"^1Error", "Player not found or offline."} })
         return
     end
@@ -1543,8 +1543,8 @@ RegisterCommand('reportcrime', function(source, args, rawCommand)
     -- Report the crime
     UpdatePlayerWantedLevel(targetId, crimeKey)
     
-    local copName = GetPlayerName(src) or "Unknown Officer"
-    local targetName = GetPlayerName(targetId) or "Unknown"
+    local copName = SafeGetPlayerName(src) or "Unknown Officer"
+    local targetName = SafeGetPlayerName(targetId) or "Unknown"
     
     SafeTriggerClientEvent('chat:addMessage', src, { args = {"^2Crime Reported", string.format("You reported %s (ID: %d) for %s", targetName, targetId, crimeKey)} })
     SafeTriggerClientEvent('chat:addMessage', targetId, { args = {"^1Crime Reported", string.format("Officer %s reported you for %s", copName, crimeKey)} })
@@ -1588,8 +1588,8 @@ SendToJail = function(playerId, durationSeconds, arrestingOfficerId, arrestOptio
         return
     end
 
-    if GetPlayerName(pIdNum) == nil then return end -- Check player online
-    local jailedPlayerName = GetPlayerName(pIdNum) or "Unknown Suspect"
+    if SafeGetPlayerName(pIdNum) == nil then return end -- Check player online
+    local jailedPlayerName = SafeGetPlayerName(pIdNum) or "Unknown Suspect"
     arrestOptions = arrestOptions or {} -- Ensure options table exists
 
     -- Store original wanted data before resetting (for accurate XP calculation)
@@ -1628,9 +1628,9 @@ SendToJail = function(playerId, durationSeconds, arrestingOfficerId, arrestOptio
         MarkPlayerForInventorySave(pIdNum) -- This function name is a bit misleading but marks generic pData save
     end
 
-    local arrestingOfficerName = (arrestingOfficerId and GetPlayerName(arrestingOfficerId)) or "System"
+    local arrestingOfficerName = (arrestingOfficerId and SafeGetPlayerName(arrestingOfficerId)) or "System"
     for copId, _ in pairs(copsOnDuty) do
-        if GetPlayerName(copId) ~= nil then -- Check cop is online
+        if SafeGetPlayerName(copId) ~= nil then -- Check cop is online
             SafeTriggerClientEvent('chat:addMessage', copId, { args = {"^5Police Info", string.format("Suspect %s jailed by %s.", jailedPlayerName, arrestingOfficerName)} })
             SafeTriggerClientEvent('cnr:updatePoliceBlip', copId, pIdNum, nil, 0, false)
         end
@@ -1676,13 +1676,13 @@ SendToJail = function(playerId, durationSeconds, arrestingOfficerId, arrestOptio
             local bountyAmt = bountyInfo.amount
             AddPlayerMoney(officerIdNum, bountyAmt)
             Log(string.format("Cop %s claimed $%d bounty on %s.", officerIdNum, bountyAmt, bountyInfo.name), "info", "CNR_SERVER")
-            local officerNameForBounty = GetPlayerName(officerIdNum) or "An officer"
+            local officerNameForBounty = SafeGetPlayerName(officerIdNum) or "An officer"
             TriggerClientEvent('chat:addMessage', -1, { args = {"^1[BOUNTY CLAIMED]", string.format("%s claimed $%d bounty on %s!", officerNameForBounty, bountyAmt, bountyInfo.name)} })
             activeBounties[pIdNum] = nil
             local robberPData = GetCnrPlayerData(pIdNum)
             if robberPData then
                 robberPData.bountyCooldownUntil = os.time() + (Config.BountySettings.cooldownMinutes*60)
-                if GetPlayerName(pIdNum) then
+                if SafeGetPlayerName(pIdNum) then
                     SavePlayerData(pIdNum)
                 end
             end
@@ -1699,7 +1699,7 @@ ForceReleasePlayerFromJail = function(playerId, reason)
     end
 
     reason = reason or "Released by server"
-    local playerIsOnline = GetPlayerName(pIdNum) ~= nil
+    local playerIsOnline = SafeGetPlayerName(pIdNum) ~= nil
 
     -- Log the attempt
     Log(string.format("Attempting to release player %s from jail. Reason: %s. Online: %s", pIdNum, reason, tostring(playerIsOnline)), "info", "CNR_SERVER")
@@ -1753,7 +1753,7 @@ CreateThread(function() -- Jail time update loop
             local pIdNum = tonumber(playerIdKey) -- Ensure we use the key from pairs()
 
             if pIdNum and pIdNum > 0 then
-                if GetPlayerName(pIdNum) ~= nil then -- Check player online
+                if SafeGetPlayerName(pIdNum) ~= nil then -- Check player online
                     jailInstanceData.remainingTime = jailInstanceData.remainingTime - 1
                     if jailInstanceData.remainingTime <= 0 then
                         ForceReleasePlayerFromJail(pIdNum, "Sentence served")
@@ -1819,7 +1819,7 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
 
     if spawnLocation then
         TriggerClientEvent('cnr:spawnPlayerAt', src, spawnLocation, spawnHeading, selectedRole)
-        Log(string.format("Player %s spawned as %s at %s", GetPlayerName(src), selectedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
+        Log(string.format("Player %s spawned as %s at %s", SafeGetPlayerName(src), selectedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
     else
         Log(string.format("No spawn point found for role %s for player %s", selectedRole, src), "warn", "CNR_SERVER")
         TriggerClientEvent('cnr:roleSelected', src, false, "No spawn point configured for this role.")
@@ -2182,14 +2182,14 @@ CreateThread(function()
 
         -- Save all players who have pending saves
         for playerId, needsSave in pairs(playersSavePending) do
-            if needsSave and GetPlayerName(playerId) then
+            if needsSave and SafeGetPlayerName(playerId) then
                 SavePlayerDataImmediate(playerId, "periodic")
             end
         end
 
         -- Clean up offline players from pending saves
         for playerId, _ in pairs(playersSavePending) do
-            if not GetPlayerName(playerId) then
+            if not SafeGetPlayerName(playerId) then
                 playersSavePending[playerId] = nil
             end
         end
@@ -2199,6 +2199,7 @@ end)
 -- REFACTORED: Player connection handler using new PlayerManager system
 AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
     local src = source
+    UpdatePlayerNameCache(src, name)
     Log(string.format("Player connecting: %s (ID: %s)", name, src), "info", "CNR_SERVER")
 
     -- Check for bans using improved validation
@@ -2230,7 +2231,8 @@ end)
 -- ENHANCED: Player disconnection handler with comprehensive memory management
 AddEventHandler('playerDropped', function(reason)
     local src = source
-    local playerName = GetPlayerName(src) or "Unknown"
+    local playerName = SafeGetPlayerName(src) or "Unknown"
+    ClearPlayerNameCache(src)
 
     Log(string.format("Player %s (ID: %s) disconnected. Reason: %s", playerName, src, reason), "info", "CNR_SERVER")
 
@@ -2419,7 +2421,7 @@ AddEventHandler('cnr:playerSpawned', function()
     -- Ensure data sync after a brief delay for client readiness
     Citizen.SetTimeout(Constants.TIME_MS.SECOND * 2, function()
         -- Validate player is still online
-        if not GetPlayerName(src) then return end
+        if not SafeGetPlayerName(src) then return end
         
         -- Sync player data to client using PlayerManager
         PlayerManager.SyncPlayerDataToClient(src)
@@ -3191,17 +3193,17 @@ AddEventHandler('cnr:bankTransfer', function(targetId, amount)
     AddTransactionHistory(playerLicense, {
         type = "transfer_out",
         amount = totalCost,
-        description = "Transfer to " .. GetPlayerName(targetId) .. " (+$" .. Config.Banking.transferFee .. " fee)"
+        description = "Transfer to " .. SafeGetPlayerName(targetId) .. " (+$" .. Config.Banking.transferFee .. " fee)"
     })
     
     AddTransactionHistory(targetLicense, {
         type = "transfer_in",
         amount = amount,
-        description = "Transfer from " .. GetPlayerName(src)
+        description = "Transfer from " .. SafeGetPlayerName(src)
     })
     
     TriggerClientEvent('cnr:showNotification', src, 'Transferred $' .. amount .. ' (Fee: $' .. Config.Banking.transferFee .. ')', 'success')
-    TriggerClientEvent('cnr:showNotification', targetId, 'Received $' .. amount .. ' from ' .. GetPlayerName(src), 'success')
+    TriggerClientEvent('cnr:showNotification', targetId, 'Received $' .. amount .. ' from ' .. SafeGetPlayerName(src), 'success')
     
     TriggerClientEvent('cnr:updateBankBalance', src, senderAccount.balance)
     TriggerClientEvent('cnr:updateBankBalance', targetId, receiverAccount.balance)
@@ -3424,7 +3426,7 @@ AddEventHandler('cnr:hackATM', function(atmId)
                 TriggerClientEvent('cnr:policeAlert', playerId, {
                     type = "ATM Hack",
                     location = playerCoords,
-                    suspect = GetPlayerName(src)
+                    suspect = SafeGetPlayerName(src)
                 })
             end
         end
@@ -3658,7 +3660,7 @@ AddEventHandler('cnr:joinHeistCrew', function(crewId, role)
     
     -- Notify crew members
     for _, memberId in pairs(crew.members) do
-        TriggerClientEvent('cnr:showNotification', memberId, GetPlayerName(src) .. ' joined as ' .. roleConfig.name, 'success')
+        TriggerClientEvent('cnr:showNotification', memberId, SafeGetPlayerName(src) .. ' joined as ' .. roleConfig.name, 'success')
         TriggerClientEvent('cnr:updateCrewInfo', memberId, crew)
     end
 end)
@@ -3698,7 +3700,7 @@ AddEventHandler('cnr:leaveHeistCrew', function()
     else
         -- Notify remaining members
         for _, memberId in pairs(crew.members) do
-            TriggerClientEvent('cnr:showNotification', memberId, GetPlayerName(src) .. ' left the crew', 'info')
+            TriggerClientEvent('cnr:showNotification', memberId, SafeGetPlayerName(src) .. ' left the crew', 'info')
             TriggerClientEvent('cnr:updateCrewInfo', memberId, crew)
         end
     end
