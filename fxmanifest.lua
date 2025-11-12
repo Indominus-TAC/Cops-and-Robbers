@@ -1,60 +1,65 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name 'Cops and Robbers - Enhanced'
-description 'An immersive Cops and Robbers game mode with advanced features and administrative control'
+name 'Cops and Robbers - Refactored'
+description 'An immersive Cops and Robbers game mode with a modular, manager-based architecture.'
 author 'The Axiom Collective'
-version '1.2.0'
+version '2.0.0'
 
 -- Define shared scripts, loaded first on both server and client.
+-- These provide foundational utilities and configurations.
 shared_scripts {
-    'version.lua',      -- Centralized version management (loaded first).
-    'config.lua',       -- Game mode configuration.
-    'constants.lua',    -- Centralized constants and configuration values.
-    'safe_utils.lua'    -- Safe utility functions (shared between client and server).
+    'version.lua',
+    'config.lua',
+    'constants.lua',
 }
 
--- Define server-side scripts in dependency order.
+-- Define server-side scripts. The order is critical for correct dependency resolution.
 server_scripts {
-    -- Core utilities and constants (loaded first)
+    -- 1. Utilities (no dependencies)
+    'utils/log_utils.lua',
+    'utils/safe_utils.lua',
+
+    -- 2. Core Managers (must be loaded before gameplay logic)
+    'data_manager.lua',
+    'security_manager.lua',
+    'player_manager.lua',
+    'inventory_manager.lua',
+    'wanted_manager.lua',
+    'jail_manager.lua',
+    'progression_manager.lua',
+    'heist_manager.lua',
+    'bounty_manager.lua',
     
-    -- New refactored systems (loaded in dependency order)
-    'security_enhancements.lua', -- Enhanced security validation and monitoring (includes validation functions).
-    'data_manager.lua',  -- Improved data persistence system with batching.
-    'secure_systems.lua', -- Secure inventory and transaction systems with anti-duplication.
-    'performance_manager.lua', -- Performance optimization and memory management.
-    'player_manager.lua', -- Refactored player data management system (includes integration management).
-    
-    -- Consolidated server system (includes inventory, progression, and core logic)
-    'server.lua',       -- Core server logic with consolidated systems (includes admin commands).
+    -- 3. Main Server Logic (depends on all managers)
+    'server.lua',
 }
 
 -- Define client-side scripts.
 client_scripts {
-    'client.lua',        -- Core client logic with consolidated systems (inventory, character editor, progression).
+    'client.lua',
 }
 
 -- Define the NUI page.
-ui_page 'html/main_ui.html' -- Consolidated NUI page for role selection, store, admin panel, etc.
+ui_page 'html/main_ui.html'
 
 -- Define files to be included with the resource.
--- These files are accessible by the client and NUI.
 files {
-    'html/main_ui.html',     -- Main HTML file for the NUI.
-    'html/styles.css',       -- CSS styles for the NUI.
-    'html/ui_optimizer.js',  -- Client-side UI performance optimization system.
-    'html/scripts.js',       -- JavaScript for NUI interactions.
-    'purchase_history.json', -- For dynamic pricing persistence (ensure write access for server).
-    'player_data/*',         -- Wildcard for player save files (ensure server has write access to this conceptual path).
-    'bans.json'
+    'html/main_ui.html',
+    'html/styles.css',
+    'html/scripts.js',
+    -- Note: player_data, bans.json etc. are now handled by the DataManager
+    -- and do not need to be explicitly listed here for client access.
 }
 
--- Declare resource dependencies.
+-- Declare resource dependencies, if any.
 dependencies {
 }
 
-export 'UpdateFullInventory'
-export 'EquipInventoryWeapons'
-
--- Network events
-server_export 'GetCharacterForRoleSelection'
+-- Exports for interoperability with other resources.
+exports {
+    'GetPlayerData',
+    'UpdateMoney',
+    'GetPlayerRole',
+    'SetPlayerRole'
+}
