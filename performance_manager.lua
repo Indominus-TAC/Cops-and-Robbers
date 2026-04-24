@@ -105,14 +105,20 @@ function MemoryManager.CleanupPlayerData(playerId)
     
     -- Secure inventory cleanup
     if SecureInventory then
-        SecureInventory.CleanupPlayerData(playerId)
-        cleanedItems = cleanedItems + 1
+        local cleanupInventoryPlayer = SecureInventory.CleanupPlayerData or SecureInventory.CleanupPlayer
+        if cleanupInventoryPlayer then
+            cleanupInventoryPlayer(playerId)
+            cleanedItems = cleanedItems + 1
+        end
     end
     
     -- Transaction system cleanup
     if SecureTransactions then
-        SecureTransactions.CleanupPlayerTransactions(playerId)
-        cleanedItems = cleanedItems + 1
+        local cleanupPlayerTransactions = SecureTransactions.CleanupPlayerTransactions
+        if cleanupPlayerTransactions then
+            cleanupPlayerTransactions(playerId)
+            cleanedItems = cleanedItems + 1
+        end
     end
     
     -- Validation system cleanup
@@ -184,7 +190,10 @@ function MemoryManager.CleanupOldTransactions()
     
     -- Clean up expired secure transactions
     if SecureTransactions then
-        cleanedCount = cleanedCount + SecureTransactions.CleanupExpiredTransactions()
+        local cleanupExpiredTransactions = SecureTransactions.CleanupExpiredTransactions
+        if cleanupExpiredTransactions then
+            cleanedCount = cleanedCount + cleanupExpiredTransactions()
+        end
     end
     
     memoryStats.transactionCleanups = memoryStats.transactionCleanups + cleanedCount
@@ -216,7 +225,10 @@ function MemoryManager.CleanupInventoryCache()
     
     -- Clean up secure inventory caches
     if SecureInventory then
-        cleanedCount = cleanedCount + SecureInventory.CleanupInventoryCache()
+        local cleanupInventoryCache = SecureInventory.CleanupInventoryCache
+        if cleanupInventoryCache then
+            cleanedCount = cleanedCount + cleanupInventoryCache()
+        end
     end
     
     memoryStats.inventoryCleanups = memoryStats.inventoryCleanups + cleanedCount

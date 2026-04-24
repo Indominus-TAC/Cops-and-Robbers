@@ -39,8 +39,18 @@ RegisterNetEvent('cnr:loadedPlayerCharacters')
 RegisterNetEvent('cnr:characterSaveResult')
 RegisterNetEvent('cnr:characterDeleteResult')
 RegisterNetEvent('cnr:receiveCharacterForRole')
+RegisterNetEvent('cnr:setPlayerRole')
+RegisterNetEvent('cnr:showWantedNotification')
+RegisterNetEvent('cnr:hideWantedNotification')
 RegisterNetEvent('cnr:performUITest')
 RegisterNetEvent('cnr:getUITestResults')
+RegisterNetEvent('cnr:notification')
+RegisterNetEvent('cnr:openHeistPlanning')
+RegisterNetEvent('cnr:updateAvailableHeists')
+RegisterNetEvent('cnr:updateCrewInfo')
+RegisterNetEvent('cnr:startHeistExecution')
+RegisterNetEvent('cnr:updateHeistStage')
+RegisterNetEvent('cnr:policeAlert')
 
 -- =====================================
 --           VARIABLES
@@ -356,6 +366,56 @@ local editorUI = {
     isVisible = false
 }
 
+local function GetEntryCoords(entry)
+    if not entry then
+        return nil
+    end
+
+    local location = entry.location or entry.pos or entry.coords
+    if location then
+        if type(location) == "vector3" or type(location) == "vector4" then
+            return vector3(location.x, location.y, location.z)
+        end
+
+        if type(location) == "table" and location.x and location.y and location.z then
+            return vector3(location.x, location.y, location.z)
+        end
+    end
+
+    if entry.x and entry.y and entry.z then
+        return vector3(entry.x, entry.y, entry.z)
+    end
+
+    return nil
+end
+
+local function GetEntryHeading(entry, fallbackHeading)
+    if not entry then
+        return fallbackHeading or 0.0
+    end
+
+    local location = entry.location or entry.pos or entry.coords
+    if type(location) == "vector4" then
+        return location.w
+    end
+
+    if type(location) == "table" and location.w then
+        return location.w
+    end
+
+    return entry.heading or fallbackHeading or 0.0
+end
+
+local function GetRoleSpawnHeading(playerRole)
+    if playerRole == "cop" then
+        return 270.0
+    elseif playerRole == "robber" then
+        return 180.0
+    end
+
+    return 0.0
+end
+
 -- Get default character data
 function GetDefaultCharacterData()
     local defaultData = {}
@@ -590,8 +650,8 @@ function OpenCharacterEditor(role, characterSlot)
         role = currentRole,
         characterSlot = currentCharacterSlot,
         characterData = currentCharacterData,
-        uniformPresets = {},
-        customizationRanges = {},
+        uniformPresets = (Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[currentRole]) or {},
+        customizationRanges = (Config.CharacterEditor and Config.CharacterEditor.customization) or {},
         playerCharacters = playerCharacters
     })
     
@@ -633,8 +693,11 @@ function CloseCharacterEditor(save)
     
     if currentRole and Config.SpawnPoints and Config.SpawnPoints[currentRole] then
         local spawnPoint = Config.SpawnPoints[currentRole]
-        SetEntityCoords(ped, spawnPoint.x, spawnPoint.y, spawnPoint.z, false, false, false, true)
-        SetEntityHeading(ped, 0.0)
+        local spawnCoords = GetEntryCoords(spawnPoint)
+        if spawnCoords then
+            SetEntityCoords(ped, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
+            SetEntityHeading(ped, GetEntryHeading(spawnPoint, GetRoleSpawnHeading(currentRole)))
+        end
     end
     
     isInCharacterEditor = false
@@ -650,6 +713,44 @@ function CloseCharacterEditor(save)
     
     DisplayHud(true)
     DisplayRadar(true)
+end
+
+local function ApplyUniformPresetForCurrentRole(presetIndex)
+    local rolePresets = Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[currentRole]
+    local preset = rolePresets and rolePresets[presetIndex]
+    if not preset then
+        return false
+    end
+
+    local ped = PlayerPedId()
+    if not ped or ped == 0 or not DoesEntityExist(ped) then
+        return false
+    end
+
+    currentUniformPreset = presetIndex
+    currentCharacterData.components = currentCharacterData.components or {}
+    currentCharacterData.props = currentCharacterData.props or {}
+
+    if preset.components then
+        for componentId, componentData in pairs(preset.components) do
+            currentCharacterData.components[componentId] = {
+                drawable = componentData.drawable or 0,
+                texture = componentData.texture or 0
+            }
+        end
+    end
+
+    if preset.props then
+        for propId, propData in pairs(preset.props) do
+            currentCharacterData.props[propId] = {
+                drawable = propData.drawable or -1,
+                texture = propData.texture or 0
+            }
+        end
+    end
+
+    ApplyCharacterData(currentCharacterData, ped)
+    return true
 end
 
 -- =====================================
@@ -863,10 +964,13 @@ local function spawnPlayer(playerRole)
         return
     end
     local spawnPoint = Config.SpawnPoints[playerRole]
-    if spawnPoint and spawnPoint.x and spawnPoint.y and spawnPoint.z then
+    local spawnCoords = GetEntryCoords(spawnPoint)
+    local spawnHeading = GetEntryHeading(spawnPoint, GetRoleSpawnHeading(playerRole))
+    if spawnCoords then
         local playerPed = PlayerPedId()
         if playerPed and playerPed ~= 0 and playerPed ~= -1 and DoesEntityExist(playerPed) then
-            SetEntityCoords(playerPed, spawnPoint.x, spawnPoint.y, spawnPoint.z, false, false, false, true)
+            SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
+            SetEntityHeading(playerPed, spawnHeading)
             ShowNotification("Spawned as " .. playerRole)
         else
             Log("spawnPlayer: playerPed invalid, cannot set coords.", "warn", "CNR_CLIENT")
@@ -930,8 +1034,9 @@ local function ApplyRoleVisualsAndLoadout(newRole, oldRole)
             
             if characterData then
                 -- Apply saved character data
-                if exports['cops-and-robbers'] and exports['cops-and-robbers'].ApplyCharacterData then
-                    local success = exports['cops-and-robbers']:ApplyCharacterData(characterData, playerPed)
+                local currentResourceName = GetCurrentResourceName()
+                if exports[currentResourceName] and exports[currentResourceName].ApplyCharacterData then
+                    local success = exports[currentResourceName]:ApplyCharacterData(characterData, playerPed)
                     if success then
                         Log("Applied saved character data", "info", "CNR_CHARACTER_EDITOR")
                     else
@@ -1013,17 +1118,30 @@ local function SetWantedLevelForPlayerRole(stars, points)
     -- Instead, we use our custom UI based on the stars parameter
     currentWantedStarsClient = stars
     currentWantedPointsClient = points
+
+    local uiLabel = ""
+    for _, levelData in ipairs(Config.WantedSettings.levels or {}) do
+        if levelData.stars == stars then
+            uiLabel = levelData.uiLabel or levelData.description or ""
+            break
+        end
+    end
+
+    if uiLabel == "" and stars > 0 then
+        uiLabel = "Wanted: " .. string.rep("★", stars) .. string.rep("☆", math.max(0, 5 - stars))
+    end
     
-    -- Only show our custom wanted UI if player has stars
+    -- Show the wanted notification as the active wanted display while stars are present
     if stars > 0 then
         SendNUIMessage({
-            action = 'showWantedUI',
+            action = 'showWantedNotification',
             stars = stars,
-            points = points
+            points = points,
+            level = uiLabel
         })
     else
         SendNUIMessage({
-            action = 'hideWantedUI'
+            action = 'hideWantedNotification'
         })
     end
 end
@@ -1207,22 +1325,15 @@ Citizen.CreateThread(function()
     end
 end)
 
--- Inventory Key Binding (M Key)
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(100) -- Reduced frequency to prevent performance issues
-        if IsControlJustPressed(0, Config.Keybinds.openInventory or 244) then -- M Key (INPUT_INTERACTION_MENU)
-            local currentResourceName = GetCurrentResourceName()
+-- Inventory Key Binding
+RegisterCommand('+cnr_openinventory', function()
+    ToggleInventoryUI()
+end, false)
 
-            if exports[currentResourceName] and exports[currentResourceName].ToggleInventoryUI then
-                exports[currentResourceName]:ToggleInventoryUI()
-            else
-                -- Fallback: try to trigger inventory event
-                TriggerEvent('cnr:openInventory')
-            end
-        end
-    end
-end)
+RegisterCommand('-cnr_openinventory', function()
+end, false)
+
+RegisterKeyMapping('+cnr_openinventory', 'Open Inventory', 'keyboard', Config.Keybinds.openInventoryKey or 'I')
 
 -- Register the inventory commands that are missing
 RegisterCommand('getweapons', function()
@@ -1691,14 +1802,11 @@ AddEventHandler('playerSpawned', function()
     else
         -- Player already has a role, respawn them at their role's spawn point
         local spawnPoint = Config.SpawnPoints[role]
-        if spawnPoint then
+        local spawnCoords = GetEntryCoords(spawnPoint)
+        if spawnCoords then
             local playerPed = PlayerPedId()
-            SetEntityCoords(playerPed, spawnPoint.x, spawnPoint.y, spawnPoint.z, false, false, false, true)
-            if role == "cop" then
-                SetEntityHeading(playerPed, 270.0)
-            elseif role == "robber" then
-                SetEntityHeading(playerPed, 180.0)
-            end
+            SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
+            SetEntityHeading(playerPed, GetEntryHeading(spawnPoint, GetRoleSpawnHeading(role)))
             ShowNotification("Respawned as " .. role)
             -- Reapply role visuals and loadout
             ApplyRoleVisualsAndLoadout(role, nil)
@@ -1778,6 +1886,7 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
             Log("cnr:updatePlayerData: playerPed invalid during initial citizen spawn.", "warn", "CNR_CLIENT")
         end
     end
+    UpdateActivityBlips()
     SendNUIMessage({ action = 'updateMoney', cash = playerCash })
     UpdateCopStoreBlips() -- removed argument
     SendNUIMessage({
@@ -1816,33 +1925,53 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
     end
 end)
 
-RegisterNetEvent('cnr:xpGained')
-AddEventHandler('cnr:xpGained', function(amount, newTotalXp)
-    amount = amount or 0
-    newTotalXp = newTotalXp or 0
-    playerData.xp = newTotalXp
-    ShowNotification(string.format("~g~+%d XP! (Total: %d)", amount, newTotalXp))
+RegisterNetEvent('cnr:roleSelected')
+AddEventHandler('cnr:roleSelected', function(success, message)
+    if success then
+        SendNUIMessage({ action = 'hideRoleSelection' })
+        SetNuiFocus(false, false)
+    else
+        SendNUIMessage({
+            action = 'roleSelectionFailed',
+            error = message or 'Role selection failed.'
+        })
+        SetNuiFocus(true, true)
+    end
+
+    if message and message ~= "" then
+        ShowNotification(success and ("~g~" .. message) or ("~r~" .. message))
+    end
+end)
+
+AddEventHandler('cnr:setPlayerRole', function(newRole)
+    role = newRole or nil
+
+    if playerData then
+        playerData.role = role
+    end
+
+    UpdateActivityBlips()
+end)
+
+AddEventHandler('cnr:showWantedNotification', function(stars, points, level)
+    stars = tonumber(stars) or 0
+    points = tonumber(points) or 0
+    currentWantedStarsClient = stars
+    currentWantedPointsClient = points
+
     SendNUIMessage({
-        action = "updateXPBar",
-        currentXP = playerData.xp,
-        currentLevel = playerData.level,
-        xpForNextLevel = CalculateXpForNextLevelClient(playerData.level, playerData.role),
-        xpGained = amount
+        action = 'showWantedNotification',
+        stars = stars,
+        points = points,
+        level = level
     })
 end)
 
-RegisterNetEvent('cnr:levelUp')
-AddEventHandler('cnr:levelUp', function(newLevel, newTotalXp)
-    local oldLevel = playerData.level
-    playerData.level = newLevel
-    playerData.xp = newTotalXp
-    ShowNotification("~g~LEVEL UP!~w~ You reached Level " .. newLevel .. "!" )
+AddEventHandler('cnr:hideWantedNotification', function()
+    currentWantedStarsClient = 0
+    currentWantedPointsClient = 0
     SendNUIMessage({
-        action = "updateXPBar",
-        currentXP = playerData.xp,
-        currentLevel = playerData.level,
-        xpForNextLevel = CalculateXpForNextLevelClient(playerData.level, playerData.role),
-        xpGained = 0 -- Level up doesn't show XP gain, just the level animation
+        action = 'hideWantedNotification'
     })
 end)
 
@@ -1954,17 +2083,39 @@ AddEventHandler('cnr:startHeistTimer', function(duration, heistName)
 end)
 
 -- Handler for heist completion
-AddEventHandler('cnr:heistCompleted', function(reward, xpEarned)
-    -- Show completion message
-    local message = string.format("~g~Heist completed!~w~ You earned ~g~$%s~w~ and ~b~%d XP~w~.", reward, xpEarned)
-    ShowNotification(message)
-      -- Play success sound
-    PlaySoundFrontend(-1, "MISSION_PASS_NOTIFY", "HUD_AWARDS", true)
-    
-    -- Update stats UI if needed
-    if playerStats then
-        playerStats.heists = (playerStats.heists or 0) + 1
+AddEventHandler('cnr:heistCompleted', function(heistResult, xpEarned)
+    local resultData = heistResult
+    if type(heistResult) ~= "table" then
+        resultData = {
+            success = true,
+            reward = heistResult or 0,
+            xp = xpEarned or 0
+        }
     end
+
+    SendNUIMessage({
+        action = "heistCompleted",
+        success = resultData.success,
+        reward = resultData.reward or 0,
+        xp = resultData.xp or 0,
+        heistName = resultData.heistName,
+        reason = resultData.reason,
+        duration = resultData.duration
+    })
+
+    local message
+    if resultData.success then
+        message = string.format("~g~Heist completed!~w~ You earned ~g~$%s~w~ and ~b~%d XP~w~.", resultData.reward or 0, resultData.xp or 0)
+        PlaySoundFrontend(-1, "MISSION_PASS_NOTIFY", "HUD_AWARDS", true)
+        if playerStats then
+            playerStats.heists = (playerStats.heists or 0) + 1
+        end
+    else
+        message = string.format("~r~Heist failed!~w~ %s", resultData.reason or "Unknown reason")
+        PlaySoundFrontend(-1, "Mission_Failed", "DLC_HEIST_HACKING_SNAKE_SOUNDS", true)
+    end
+
+    ShowNotification(message)
 end)
 
 -- =====================================
@@ -1995,11 +2146,6 @@ RegisterNUICallback('selectRole', function(data, cb)
 end)
 
 -- Register NUI callback for setting NUI focus
-RegisterNUICallback('setNuiFocus', function(data, cb)
-    SetNuiFocus(data.hasFocus, data.hasCursor)
-    cb({success = true})
-end)
-
 -- Register NUI callbacks for robber menu actions
 RegisterNUICallback('startHeist', function(data, cb)
     TriggerEvent('cnr:startHeist')
@@ -2008,11 +2154,6 @@ end)
 
 RegisterNUICallback('viewBounties', function(data, cb)
     TriggerEvent('cnr:viewBounties')
-    cb({success = true})
-end)
-
-RegisterNUICallback('findHideout', function(data, cb)
-    TriggerEvent('cnr:findHideout')
     cb({success = true})
 end)
 
@@ -2029,8 +2170,8 @@ RegisterNUICallback('buyContraband', function(data, cb)
     local nearDealer = false
     
     for _, dealer in pairs(Config.ContrabandDealers or {}) do
-        local dealerPos = vector3(dealer.x, dealer.y, dealer.z)
-        local distance = #(playerPos - dealerPos)
+        local dealerPos = GetEntryCoords(dealer)
+        local distance = dealerPos and #(playerPos - dealerPos) or math.huge
         
         if distance < 5.0 then
             nearDealer = true
@@ -2083,16 +2224,6 @@ RegisterNUICallback('sellItem', function(data, cb)
 end)
 
 -- Register NUI callback for getting player inventory
-RegisterNUICallback('getPlayerInventory', function(data, cb)
-    Log("getPlayerInventory NUI callback received", "info", "CNR_CLIENT")
-    
-    -- Trigger server event to get player inventory
-    TriggerServerEvent('cops_and_robbers:getPlayerInventory')
-    
-    -- Send success response (the actual inventory will be sent via a separate event)
-    cb({success = true})
-end)
-
 -- =====================================
 --           EVENT HANDLERS
 -- =====================================
@@ -2120,7 +2251,8 @@ AddEventHandler('cnr:startHeist', function()
     
     -- Example: Check if player is near a bank
     for _, location in pairs(Config.HeistLocations or {}) do
-        local distance = #(playerPos - vector3(location.x, location.y, location.z))
+        local heistCoords = location.location or vector3(location.x, location.y, location.z)
+        local distance = #(playerPos - heistCoords)
         if distance < 20.0 then
             nearHeist = true
             heistType = location.type
@@ -2129,7 +2261,7 @@ AddEventHandler('cnr:startHeist', function()
     end
     
     if nearHeist then
-        TriggerServerEvent('cnr:initiateHeist', heistType)
+        TriggerServerEvent('cnr:startHeistPlanning', heistType)
     else
         ShowNotification("~r~You must be near a valid heist location to start a heist.")
     end
@@ -2163,8 +2295,8 @@ AddEventHandler('cnr:findHideout', function()
     local playerPos = GetEntityCoords(PlayerPedId())
     
     for _, hideout in pairs(Config.RobberHideouts or {}) do
-        local hideoutPos = vector3(hideout.x, hideout.y, hideout.z)
-        local distance = #(playerPos - hideoutPos)
+        local hideoutPos = GetEntryCoords(hideout)
+        local distance = hideoutPos and #(playerPos - hideoutPos) or math.huge
         
         if distance < shortestDistance then
             shortestDistance = distance
@@ -2174,9 +2306,10 @@ AddEventHandler('cnr:findHideout', function()
     
     if nearestHideout then
         -- Create a temporary blip for the hideout
-        local blip = AddBlipForCoord(nearestHideout.x, nearestHideout.y, nearestHideout.z)
-        SetBlipSprite(blip, 40) -- House icon
-        SetBlipColour(blip, 1) -- Red
+        local hideoutCoords = GetEntryCoords(nearestHideout)
+        local blip = AddBlipForCoord(hideoutCoords.x, hideoutCoords.y, hideoutCoords.z)
+        SetBlipSprite(blip, nearestHideout.blipSprite or 40) -- House icon
+        SetBlipColour(blip, nearestHideout.blipColor or 1) -- Red
         SetBlipAsShortRange(blip, false)
         BeginTextCommandSetBlipName("STRING")
         AddTextComponentString("Robber Hideout")
@@ -2203,8 +2336,8 @@ AddEventHandler('cnr:buyContraband', function()
     local nearDealer = false
     
     for _, dealer in pairs(Config.ContrabandDealers or {}) do
-        local dealerPos = vector3(dealer.x, dealer.y, dealer.z)
-        local distance = #(playerPos - dealerPos)
+        local dealerPos = GetEntryCoords(dealer)
+        local distance = dealerPos and #(playerPos - dealerPos) or math.huge
         
         if distance < 5.0 then
             nearDealer = true
@@ -2214,7 +2347,7 @@ AddEventHandler('cnr:buyContraband', function()
     
     if nearDealer then
         -- Open the store with contraband items
-        TriggerServerEvent('cnr:openContrabandStore')
+        TriggerServerEvent('cnr:accessContrabandDealer')
     else
         ShowNotification("~r~You must be near a contraband dealer to buy contraband.")
     end
@@ -2658,31 +2791,31 @@ RegisterCommand('togglespeedometer', function()
     TriggerEvent('cnr:notification', 'Speedometer ' .. (showSpeedometer and 'enabled' or 'disabled'))
 end, false)
 
--- Register event handler for receiving bounty list
-RegisterNetEvent('cnr:receiveBountyList')
-AddEventHandler('cnr:receiveBountyList', function(bounties)
-    SendNUIMessage({
-        action = 'showBountyList',
-        bounties = bounties
-    })
-end)
-
 -- ====================================================================
 -- Robber Hideouts
 -- ====================================================================
 
 local hideoutBlips = {}
 local isHideoutVisible = false
+local pendingPlayerRoleCallbacks = {}
 
 -- Function to get player's current role from server
 function GetCurrentPlayerRole(callback)
+    if type(callback) == "function" then
+        table.insert(pendingPlayerRoleCallbacks, callback)
+    end
+
     TriggerServerEvent('cnr:getPlayerRole')
-    
-    RegisterNetEvent('cnr:returnPlayerRole')
-    AddEventHandler('cnr:returnPlayerRole', function(role)
-        callback(role)
-    end)
 end
+
+AddEventHandler('cnr:returnPlayerRole', function(role)
+    local callbacks = pendingPlayerRoleCallbacks
+    pendingPlayerRoleCallbacks = {}
+
+    for _, callback in ipairs(callbacks) do
+        callback(role)
+    end
+end)
 
 -- Create a blip for the nearest robber hideout
 function FindNearestHideout()
@@ -2703,22 +2836,24 @@ function FindNearestHideout()
         
         -- Find the nearest hideout
         for _, hideout in ipairs(Config.RobberHideouts) do
-            local hideoutCoords = vector3(hideout.x, hideout.y, hideout.z)
-            local distance = #(playerCoords - hideoutCoords)
-            
-            if distance < nearestDistance then
-                nearestDistance = distance
-                nearestHideout = hideout
+            local hideoutCoords = GetEntryCoords(hideout)
+            if hideoutCoords then
+                local distance = #(playerCoords - hideoutCoords)
+                
+                if distance < nearestDistance then
+                    nearestDistance = distance
+                    nearestHideout = hideout
+                end
             end
         end
         
         if nearestHideout then
-            local hideoutCoords = vector3(nearestHideout.x, nearestHideout.y, nearestHideout.z)
+            local hideoutCoords = GetEntryCoords(nearestHideout)
             
             -- Create blip for the hideout
             local blip = AddBlipForCoord(hideoutCoords.x, hideoutCoords.y, hideoutCoords.z)
             SetBlipSprite(blip, 492) -- House icon
-            SetBlipColour(blip, 1) -- Red
+            SetBlipColour(blip, nearestHideout.blipColor or 1) -- Red
             SetBlipScale(blip, 0.8)
             SetBlipAsShortRange(blip, false)
             BeginTextCommandSetBlipName("STRING")
@@ -2758,12 +2893,6 @@ function RemoveHideoutBlips()
     hideoutBlips = {}
     isHideoutVisible = false
 end
-
--- NUI Callback for Find Hideout button
-RegisterNUICallback('findHideout', function(data, cb)
-    FindNearestHideout()
-    cb({})
-end)
 
 -- ====================================================================
 -- Client-Side Jail System Logic
@@ -3000,6 +3129,63 @@ end)
 
 local contrabandDealerBlips = {}
 local contrabandDealerPeds = {}
+local activityBlips = {
+    banks = {},
+    hideouts = {}
+}
+
+local function ClearBlipCollection(blips)
+    for _, blip in ipairs(blips) do
+        if DoesBlipExist(blip) then
+            RemoveBlip(blip)
+        end
+    end
+
+    for index = #blips, 1, -1 do
+        blips[index] = nil
+    end
+end
+
+function UpdateActivityBlips()
+    ClearBlipCollection(activityBlips.banks)
+    ClearBlipCollection(activityBlips.hideouts)
+
+    if role ~= "robber" then
+        return
+    end
+
+    local bankLocations = (Config.BankTellers and #Config.BankTellers > 0) and Config.BankTellers or (Config.HeistLocations or {})
+
+    for _, location in ipairs(bankLocations) do
+        local heistCoords = GetEntryCoords(location)
+        if heistCoords then
+            local blip = AddBlipForCoord(heistCoords.x, heistCoords.y, heistCoords.z)
+            SetBlipSprite(blip, location.blipSprite or 108)
+            SetBlipColour(blip, 2)
+            SetBlipScale(blip, 0.8)
+            SetBlipAsShortRange(blip, true)
+            BeginTextCommandSetBlipName("STRING")
+            AddTextComponentString(location.name or "Bank")
+            EndTextCommandSetBlipName(blip)
+            table.insert(activityBlips.banks, blip)
+        end
+    end
+
+    for _, hideout in ipairs(Config.RobberHideouts or {}) do
+        local hideoutCoords = GetEntryCoords(hideout)
+        if hideoutCoords then
+            local blip = AddBlipForCoord(hideoutCoords.x, hideoutCoords.y, hideoutCoords.z)
+            SetBlipSprite(blip, hideout.blipSprite or 40)
+            SetBlipColour(blip, hideout.blipColor or 1)
+            SetBlipScale(blip, 0.75)
+            SetBlipAsShortRange(blip, true)
+            BeginTextCommandSetBlipName("STRING")
+            AddTextComponentString(hideout.name or "Robber Hideout")
+            EndTextCommandSetBlipName(blip)
+            table.insert(activityBlips.hideouts, blip)
+        end
+    end
+end
 
 -- Create contraband dealer blips and peds
 Citizen.CreateThread(function()
@@ -3008,36 +3194,39 @@ Citizen.CreateThread(function()
     
     -- Create dealers
     for _, dealer in ipairs(Config.ContrabandDealers) do
-        -- Create blip
-        local blip = AddBlipForCoord(dealer.x, dealer.y, dealer.z)
-        SetBlipSprite(blip, 378) -- Mask icon
-        SetBlipColour(blip, 1) -- Red
-        SetBlipScale(blip, 0.7)
-        SetBlipAsShortRange(blip, true)
-        BeginTextCommandSetBlipName("STRING")
-        AddTextComponentString(dealer.name or "Contraband Dealer")
-        EndTextCommandSetBlipName(blip)
-        
-        -- Add to dealer blips table
-        table.insert(contrabandDealerBlips, blip)
-        
-        -- Create dealer ped
-        local pedHash = GetHashKey("s_m_y_dealer_01") -- Default dealer model
-        
-        -- Request the model
-        RequestModel(pedHash)
-        while not HasModelLoaded(pedHash) do
-            Citizen.Wait(10)
+        local dealerCoords = GetEntryCoords(dealer)
+        if dealerCoords then
+            -- Create blip
+            local blip = AddBlipForCoord(dealerCoords.x, dealerCoords.y, dealerCoords.z)
+            SetBlipSprite(blip, dealer.blipSprite or 378) -- Mask icon
+            SetBlipColour(blip, dealer.blipColor or 1) -- Red
+            SetBlipScale(blip, 0.7)
+            SetBlipAsShortRange(blip, true)
+            BeginTextCommandSetBlipName("STRING")
+            AddTextComponentString(dealer.name or "Contraband Dealer")
+            EndTextCommandSetBlipName(blip)
+            
+            -- Add to dealer blips table
+            table.insert(contrabandDealerBlips, blip)
+            
+            -- Create dealer ped
+            local pedHash = GetHashKey(dealer.model or "s_m_y_dealer_01")
+            
+            -- Request the model
+            RequestModel(pedHash)
+            while not HasModelLoaded(pedHash) do
+                Citizen.Wait(10)
+            end
+            
+            -- Create ped
+            local ped = CreatePed(4, pedHash, dealerCoords.x, dealerCoords.y, dealerCoords.z - 1.0, GetEntryHeading(dealer), false, true)
+            FreezeEntityPosition(ped, true)
+            SetEntityInvincible(ped, true)
+            SetBlockingOfNonTemporaryEvents(ped, true)
+            
+            -- Add to dealer peds table
+            table.insert(contrabandDealerPeds, ped)
         end
-        
-        -- Create ped
-        local ped = CreatePed(4, pedHash, dealer.x, dealer.y, dealer.z - 1.0, dealer.heading, false, true)
-        FreezeEntityPosition(ped, true)
-        SetEntityInvincible(ped, true)
-        SetBlockingOfNonTemporaryEvents(ped, true)
-        
-        -- Add to dealer peds table
-        table.insert(contrabandDealerPeds, ped)
     end
 end)
 
@@ -3050,128 +3239,25 @@ Citizen.CreateThread(function()
         local playerCoords = GetEntityCoords(playerPed)
         
         for _, dealer in ipairs(Config.ContrabandDealers) do
-            local dealerCoords = vector3(dealer.x, dealer.y, dealer.z)
-            local distance = #(playerCoords - dealerCoords)            if distance < 3.0 then
-                -- Draw a simpler marker
-                DrawSphere(dealer.x, dealer.y, dealer.z - 0.5, 0.5, 255, 0, 0, 0.2)
-                
-                -- Display help text
-                BeginTextCommandDisplayHelp("STRING")
-                AddTextComponentSubstringPlayerName("Press ~INPUT_CONTEXT~ to access the contraband dealer")
-                EndTextCommandDisplayHelp(0, false, true, -1)
-                
-                -- Check for interaction key
-                if IsControlJustReleased(0, 38) then -- E key
-                    TriggerServerEvent('cnr:accessContrabandDealer')
+            local dealerCoords = GetEntryCoords(dealer)
+            if dealerCoords then
+                local distance = #(playerCoords - dealerCoords)
+                if distance < 3.0 then
+                    DrawSphere(dealerCoords.x, dealerCoords.y, dealerCoords.z - 0.5, 0.5, 255, 0, 0, 0.2)
+                    
+                    BeginTextCommandDisplayHelp("STRING")
+                    AddTextComponentSubstringPlayerName("Press ~INPUT_CONTEXT~ to access the contraband dealer")
+                    EndTextCommandDisplayHelp(0, false, true, -1)
+                    
+                    if IsControlJustReleased(0, 38) then -- E key
+                        TriggerServerEvent('cnr:accessContrabandDealer')
+                    end
                 end
             end
         end
     end
 end)
 
--- NUI Callback for Buy Contraband button
-RegisterNUICallback('buyContraband', function(data, cb)
-    TriggerServerEvent('cnr:accessContrabandDealer')
-    cb({})
-end)
-
--- ====================================================================
--- Robber Hideouts
--- ====================================================================
-
-local hideoutBlips = {}
-local isHideoutVisible = false
-
--- Function to get player's current role from server
-function GetCurrentPlayerRole(callback)
-    TriggerServerEvent('cnr:getPlayerRole')
-    
-    RegisterNetEvent('cnr:returnPlayerRole')
-    AddEventHandler('cnr:returnPlayerRole', function(role)
-        callback(role)
-    end)
-end
-
--- Create a blip for the nearest robber hideout
-function FindNearestHideout()
-    -- Check if player is a robber
-    GetCurrentPlayerRole(function(role)
-        if role ~= "robber" then
-            TriggerEvent('cnr:notification', "Only robbers can access hideouts.", "error")
-            return
-        end
-        
-        -- Clean up any existing hideout blips
-        RemoveHideoutBlips()
-        
-        local playerPed = PlayerPedId()
-        local playerCoords = GetEntityCoords(playerPed)
-        local nearestHideout = nil
-        local nearestDistance = 9999.0
-        
-        -- Find the nearest hideout
-        for _, hideout in ipairs(Config.RobberHideouts) do
-            local hideoutCoords = vector3(hideout.x, hideout.y, hideout.z)
-            local distance = #(playerCoords - hideoutCoords)
-            
-            if distance < nearestDistance then
-                nearestDistance = distance
-                nearestHideout = hideout
-            end
-        end
-        
-        if nearestHideout then
-            local hideoutCoords = vector3(nearestHideout.x, nearestHideout.y, nearestHideout.z)
-            
-            -- Create blip for the hideout
-            local blip = AddBlipForCoord(hideoutCoords.x, hideoutCoords.y, hideoutCoords.z)
-            SetBlipSprite(blip, 492) -- House icon
-            SetBlipColour(blip, 1) -- Red
-            SetBlipScale(blip, 0.8)
-            SetBlipAsShortRange(blip, false)
-            BeginTextCommandSetBlipName("STRING")
-            AddTextComponentString(nearestHideout.name)
-            EndTextCommandSetBlipName(blip)
-            
-            -- Set route to the hideout
-            SetBlipRoute(blip, true)
-            SetBlipRouteColour(blip, 1) -- Red route
-            
-            -- Add to hideout blips table
-            table.insert(hideoutBlips, blip)
-            
-            -- Notify player
-            TriggerEvent('cnr:notification', "Route set to " .. nearestHideout.name .. ".")
-            
-            -- Set timer to remove the blip after 2 minutes
-            Citizen.SetTimeout(120000, function()
-                RemoveHideoutBlips()
-                TriggerEvent('cnr:notification', "Hideout marker removed from map.")
-            end)
-            
-            isHideoutVisible = true
-        else
-            TriggerEvent('cnr:notification', "No hideouts found nearby.", "error")
-        end
-    end)
-end
-
--- Remove all hideout blips
-function RemoveHideoutBlips()
-    for _, blip in ipairs(hideoutBlips) do
-        if DoesBlipExist(blip) then
-            RemoveBlip(blip)
-        end
-    end
-    hideoutBlips = {}
-    isHideoutVisible = false
-end
-
--- NUI Callback for Find Hideout button
-RegisterNUICallback('findHideout', function(data, cb)
-    FindNearestHideout()
-    cb({})
-end)
 -- Function to spawn player at a specific location
 function SpawnPlayerAtLocation(spawnLocation, spawnHeading, role)
     if not spawnLocation then
@@ -3180,23 +3266,19 @@ function SpawnPlayerAtLocation(spawnLocation, spawnHeading, role)
     end
     
     local playerPed = PlayerPedId()
-    
-    -- Set player position and heading
-    if type(spawnLocation) == "vector3" then
-        SetEntityCoords(playerPed, spawnLocation.x, spawnLocation.y, spawnLocation.z, false, false, false, true)
-    elseif type(spawnLocation) == "vector4" then
-        SetEntityCoords(playerPed, spawnLocation.x, spawnLocation.y, spawnLocation.z, false, false, false, true)
-        spawnHeading = spawnLocation.w
-    elseif type(spawnLocation) == "table" and spawnLocation.x and spawnLocation.y and spawnLocation.z then
-        SetEntityCoords(playerPed, spawnLocation.x, spawnLocation.y, spawnLocation.z, false, false, false, true)
-    else
+    local spawnCoords = GetEntryCoords(spawnLocation)
+    local finalHeading = GetEntryHeading(spawnLocation, spawnHeading or GetRoleSpawnHeading(role))
+
+    if not spawnCoords then
         print("[CNR_CLIENT_ERROR] SpawnPlayerAtLocation: Unsupported spawn location format")
         return
     end
+
+    SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
     
     -- Set heading if provided
-    if spawnHeading then
-        SetEntityHeading(playerPed, spawnHeading)
+    if finalHeading then
+        SetEntityHeading(playerPed, finalHeading)
     end
     
     -- Apply role-specific visuals and loadout
@@ -3205,16 +3287,6 @@ function SpawnPlayerAtLocation(spawnLocation, spawnHeading, role)
     end
     
 end
-
--- Register and handle the network event for receiving character data
-RegisterNetEvent('cnr:receiveCharacterForRole')
-AddEventHandler('cnr:receiveCharacterForRole', function(characterData)
-    -- This will be used for future character loading logic
-    if characterData then
-        -- Process character data for role selection
-        print("[CNR_CLIENT] Received character data for role selection")
-    end
-end)
 
 -- Event handler for spawning player at location
 AddEventHandler('cnr:spawnPlayerAt', function(spawnLocation, spawnHeading, role)
@@ -3249,7 +3321,8 @@ RegisterNetEvent('cnr:showNotification')
 AddEventHandler('cnr:updateBankBalance', function(balance)
     bankingData.balance = balance
     SendNUIMessage({
-        type = "updateBankBalance",
+        action = "updateBankBalance",
+        resourceName = GetCurrentResourceName(),
         balance = balance
     })
 end)
@@ -3258,7 +3331,8 @@ end)
 AddEventHandler('cnr:updateTransactionHistory', function(history)
     bankingData.transactionHistory = history
     SendNUIMessage({
-        type = "updateTransactionHistory",
+        action = "updateTransactionHistory",
+        resourceName = GetCurrentResourceName(),
         history = history
     })
 end)
@@ -3266,10 +3340,69 @@ end)
 -- Show notification
 AddEventHandler('cnr:showNotification', function(message, type)
     SendNUIMessage({
-        type = "showNotification",
+        action = "showNotification",
+        resourceName = GetCurrentResourceName(),
         message = message,
         notificationType = type or "info"
     })
+end)
+
+AddEventHandler('cnr:notification', function(message, type)
+    TriggerEvent('cnr:showNotification', message, type)
+end)
+
+AddEventHandler('cnr:openHeistPlanning', function(heistConfig, crewId, crewRoles, equipmentShop)
+    SendNUIMessage({
+        action = "openHeistPlanning",
+        resourceName = GetCurrentResourceName(),
+        heistConfig = heistConfig,
+        crewId = crewId,
+        crewRoles = crewRoles or {},
+        equipmentShop = equipmentShop or {}
+    })
+    SetNuiFocus(true, true)
+end)
+
+AddEventHandler('cnr:updateAvailableHeists', function(heists)
+    SendNUIMessage({
+        action = "updateAvailableHeists",
+        resourceName = GetCurrentResourceName(),
+        heists = heists or {}
+    })
+end)
+
+AddEventHandler('cnr:updateCrewInfo', function(crew)
+    SendNUIMessage({
+        action = "updateCrewInfo",
+        resourceName = GetCurrentResourceName(),
+        crew = crew
+    })
+end)
+
+AddEventHandler('cnr:startHeistExecution', function(heistConfig, crew)
+    SendNUIMessage({
+        action = "startHeistExecution",
+        resourceName = GetCurrentResourceName(),
+        heistConfig = heistConfig,
+        crew = crew
+    })
+    SetNuiFocus(true, true)
+end)
+
+AddEventHandler('cnr:updateHeistStage', function(stageData)
+    SendNUIMessage({
+        action = "updateHeistStage",
+        resourceName = GetCurrentResourceName(),
+        stageData = stageData
+    })
+end)
+
+AddEventHandler('cnr:policeAlert', function(alertData)
+    local alertType = alertData and alertData.type or "Police Alert"
+    local details = alertData and (alertData.heistName or alertData.suspect) or nil
+    local message = details and string.format("%s: %s", alertType, details) or alertType
+
+    TriggerEvent('cnr:showNotification', message, "warning")
 end)
 
 -- ATM hacking for robbers
@@ -3321,25 +3454,28 @@ function InitializeBankingProps()
     
     -- Create bank teller NPCs
     for i, teller in pairs(Config.BankTellers) do
-        RequestModel(GetHashKey(teller.model))
-        while not HasModelLoaded(GetHashKey(teller.model)) do
-            Citizen.Wait(100)
+        local tellerCoords = GetEntryCoords(teller)
+        if tellerCoords then
+            RequestModel(GetHashKey(teller.model))
+            while not HasModelLoaded(GetHashKey(teller.model)) do
+                Citizen.Wait(100)
+            end
+            
+            local ped = CreatePed(4, GetHashKey(teller.model), tellerCoords.x, tellerCoords.y, tellerCoords.z - 1.0, GetEntryHeading(teller), false, true)
+            SetEntityCanBeDamaged(ped, false)
+            SetPedCanRagdollFromPlayerImpact(ped, false)
+            SetBlockingOfNonTemporaryEvents(ped, true)
+            SetEntityInvincible(ped, true)
+            FreezeEntityPosition(ped, true)
+            
+            bankTellerPeds[i] = {
+                ped = ped,
+                coords = tellerCoords,
+                name = teller.name,
+                services = teller.services,
+                id = i
+            }
         end
-        
-        local ped = CreatePed(4, GetHashKey(teller.model), teller.pos.x, teller.pos.y, teller.pos.z, teller.heading, false, true)
-        SetEntityCanBeDamaged(ped, false)
-        SetPedCanRagdollFromPlayerImpact(ped, false)
-        SetBlockingOfNonTemporaryEvents(ped, true)
-        SetEntityInvincible(ped, true)
-        FreezeEntityPosition(ped, true)
-        
-        bankTellerPeds[i] = {
-            ped = ped,
-            coords = teller.pos,
-            name = teller.name,
-            services = teller.services,
-            id = i
-        }
     end
 end
 
@@ -3419,7 +3555,8 @@ function OpenATMInterface(atm)
     
     -- Open ATM UI
     SendNUIMessage({
-        type = "openATM",
+        action = "openATM",
+        resourceName = GetCurrentResourceName(),
         atmData = {
             id = atm.id,
             balance = bankingData.balance
@@ -3440,7 +3577,8 @@ function OpenBankInterface(teller)
     
     -- Open bank UI
     SendNUIMessage({
-        type = "openBank",
+        action = "openBank",
+        resourceName = GetCurrentResourceName(),
         bankData = {
             tellerName = teller.name,
             services = teller.services,
@@ -3460,7 +3598,7 @@ function CloseBankingInterface()
     bankingData.currentBankTeller = nil
     
     SendNUIMessage({
-        type = "closeBanking"
+        action = "closeBanking"
     })
     
     SetNuiFocus(false, false)
@@ -3470,6 +3608,138 @@ end
 RegisterNUICallback('closeBanking', function(data, cb)
     CloseBankingInterface()
     cb('ok')
+end)
+
+RegisterNUICallback('openCharacterEditor', function(data, cb)
+    if not data or not data.role then
+        cb({ success = false, error = 'Invalid character editor request.' })
+        return
+    end
+
+    OpenCharacterEditor(data.role, tonumber(data.characterSlot) or 1)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_save', function(data, cb)
+    CloseCharacterEditor(true)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_cancel', function(data, cb)
+    CloseCharacterEditor(false)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_updateFeature', function(data, cb)
+    if not currentCharacterData then
+        cb({ success = false, error = 'Character editor is not active.' })
+        return
+    end
+
+    currentCharacterData.faceFeatures = currentCharacterData.faceFeatures or {}
+    currentCharacterData.components = currentCharacterData.components or {}
+    currentCharacterData.props = currentCharacterData.props or {}
+
+    local category = data and data.category
+    local feature = data and data.feature
+    local value = data and data.value
+
+    if not feature then
+        cb({ success = false, error = 'Missing feature name.' })
+        return
+    end
+
+    if category == 'faceFeatures' then
+        currentCharacterData.faceFeatures[feature] = tonumber(value) or 0.0
+    else
+        currentCharacterData[feature] = tonumber(value)
+        if currentCharacterData[feature] == nil then
+            currentCharacterData[feature] = value
+        end
+    end
+
+    ApplyCharacterData(currentCharacterData, PlayerPedId())
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_changeCamera', function(data, cb)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_rotateCharacter', function(data, cb)
+    local ped = PlayerPedId()
+    local currentHeading = GetEntityHeading(ped)
+    local delta = (data and data.direction == 'right') and 15.0 or -15.0
+    SetEntityHeading(ped, currentHeading + delta)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_switchGender', function(data, cb)
+    local gender = data and data.gender or 'male'
+    local modelName = gender == 'female' and 'mp_f_freemode_01' or 'mp_m_freemode_01'
+    local modelHash = GetHashKey(modelName)
+    RequestModel(modelHash)
+    while not HasModelLoaded(modelHash) do
+        Citizen.Wait(50)
+    end
+
+    SetPlayerModel(PlayerId(), modelHash)
+    Citizen.Wait(100)
+    currentCharacterData.model = modelName
+    ApplyCharacterData(currentCharacterData, PlayerPedId())
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_previewUniform', function(data, cb)
+    local presetIndex = tonumber(data and data.presetIndex)
+    cb({ success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false })
+end)
+
+RegisterNUICallback('characterEditor_applyUniform', function(data, cb)
+    local presetIndex = tonumber(data and data.presetIndex)
+    cb({ success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false })
+end)
+
+RegisterNUICallback('characterEditor_cancelUniformPreview', function(data, cb)
+    ApplyCharacterData(currentCharacterData, PlayerPedId())
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_loadCharacter', function(data, cb)
+    local characterKey = data and data.characterKey
+    if characterKey and playerCharacters[characterKey] then
+        currentCharacterData = playerCharacters[characterKey]
+        ApplyCharacterData(currentCharacterData, PlayerPedId())
+        cb({ success = true })
+        return
+    end
+
+    cb({ success = false, error = 'Character not found.' })
+end)
+
+RegisterNUICallback('characterEditor_deleteCharacter', function(data, cb)
+    local characterKey = data and data.characterKey
+    if characterKey then
+        playerCharacters[characterKey] = nil
+        TriggerServerEvent('cnr:deleteCharacterData', characterKey)
+        cb({ success = true })
+        return
+    end
+
+    cb({ success = false, error = 'Character not found.' })
+end)
+
+RegisterNUICallback('characterEditor_opened', function(data, cb)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_closed', function(data, cb)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('characterEditor_error', function(data, cb)
+    Log('[CNR_CHARACTER_EDITOR] ' .. tostring(data and data.error or 'Unknown NUI error'), 'error', 'CNR_CHARACTER_EDITOR')
+    cb({ success = true })
 end)
 
 RegisterNUICallback('bankDeposit', function(data, cb)
@@ -3520,6 +3790,49 @@ RegisterNUICallback('makeInvestment', function(data, cb)
     if investmentId and amount and amount > 0 then
         TriggerServerEvent('cnr:makeInvestment', investmentId, amount)
     end
+    cb('ok')
+end)
+
+RegisterNUICallback('closeHeistPlanning', function(data, cb)
+    SetNuiFocus(false, false)
+    cb('ok')
+end)
+
+RegisterNUICallback('getAvailableHeists', function(data, cb)
+    TriggerServerEvent('cnr:getAvailableHeists')
+    cb('ok')
+end)
+
+RegisterNUICallback('startHeistPlanning', function(data, cb)
+    if data and data.heistId then
+        TriggerServerEvent('cnr:startHeistPlanning', data.heistId)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('joinHeistCrew', function(data, cb)
+    if data and data.crewId and data.role then
+        TriggerServerEvent('cnr:joinHeistCrew', data.crewId, data.role)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('purchaseHeistEquipment', function(data, cb)
+    local quantity = tonumber(data and data.quantity) or 1
+    if data and data.itemId and quantity > 0 then
+        TriggerServerEvent('cnr:purchaseHeistEquipment', data.itemId, quantity)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('startEnhancedHeist', function(data, cb)
+    TriggerServerEvent('cnr:startEnhancedHeist')
+    cb('ok')
+end)
+
+RegisterNUICallback('leaveHeistCrew', function(data, cb)
+    TriggerServerEvent('cnr:leaveHeistCrew')
+    SetNuiFocus(false, false)
     cb('ok')
 end)
 
@@ -3614,19 +3927,53 @@ end)
 
 -- Event handlers for progression system
 AddEventHandler('cnr:xpGained', function(amount, reason)
-    UpdateXPDisplayElements(currentXP + amount, currentLevel, currentNextLvlXP, amount)
-    
+    local newTotalXp = (playerData and playerData.xp or currentXP or 0) + (amount or 0)
+    local roleName = playerData and playerData.role or role
+
+    playerData.xp = newTotalXp
+    ShowNotification(string.format("~g~+%d XP! (Total: %d)", amount or 0, newTotalXp))
+    SendNUIMessage({
+        action = "updateXPBar",
+        currentXP = newTotalXp,
+        currentLevel = playerData.level,
+        xpForNextLevel = CalculateXpForNextLevelClient(playerData.level, roleName),
+        xpGained = amount or 0
+    })
+    UpdateXPDisplayElements(
+        newTotalXp,
+        playerData.level,
+        CalculateXpForNextLevelClient(playerData.level, roleName),
+        amount or 0
+    )
+
     if reason then
-        ShowProgressionNotification(string.format("+%d XP (%s)", amount, reason), "xp", 3000)
+        ShowProgressionNotification(string.format("+%d XP (%s)", amount or 0, reason), "xp", 3000)
     end
 end)
 
 AddEventHandler('cnr:levelUp', function(newLevel, newTotalXp)
-    local oldLevel = currentLevel
+    local roleName = playerData and playerData.role or role
+
+    playerData.level = newLevel
+    playerData.xp = newTotalXp
+    ShowNotification("~g~LEVEL UP!~w~ You reached Level " .. newLevel .. "!")
+    SendNUIMessage({
+        action = "updateXPBar",
+        currentXP = newTotalXp,
+        currentLevel = newLevel,
+        xpForNextLevel = CalculateXpForNextLevelClient(newLevel, roleName),
+        xpGained = 0
+    })
+
     currentLevel = newLevel
     currentXP = newTotalXp
-    
     PlayLevelUpEffects(newLevel)
+    UpdateXPDisplayElements(
+        newTotalXp,
+        newLevel,
+        CalculateXpForNextLevelClient(newLevel, roleName),
+        0
+    )
     ShowProgressionNotification(string.format("🎉 LEVEL UP! You reached Level %d!", newLevel), "levelup", 7000)
 end)
 
@@ -3668,6 +4015,7 @@ end)
 AddEventHandler('cnr:receiveCharacterForRole', function(characterData)
     -- Handle character data received for role selection
     if characterData then
+        currentCharacterData = characterData
         local ped = PlayerPedId()
         ApplyCharacterData(characterData, ped)
     end
@@ -3690,12 +4038,17 @@ AddEventHandler('cnr:performUITest', function()
     local endTime = GetGameTimer()
     local duration = endTime - startTime
     
-    TriggerServerEvent('cnr:uiTestResult', duration)
+    TriggerServerEvent('cnr:uiTestResults', {
+        domOperations = 100,
+        averageRenderTime = duration / 100,
+        cacheHitRate = 0,
+        totalDuration = duration
+    })
 end)
 
 AddEventHandler('cnr:getUITestResults', function()
     -- Send UI test results back to server
-    TriggerServerEvent('cnr:sendUITestResults', {
+    TriggerServerEvent('cnr:uiTestResults', {
         fps = GetFrameCount(),
         memory = collectgarbage("count"),
         timestamp = GetGameTimer()
@@ -3847,6 +4200,7 @@ Citizen.CreateThread(function()
     
     -- Initialize character editor
     TriggerServerEvent('cnr:loadPlayerCharacters')
+    UpdateActivityBlips()
     
     Log("Consolidated client systems initialized", "info", "CNR_CLIENT")
 end)

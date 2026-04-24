@@ -96,6 +96,15 @@ function Validation.ValidateItem(itemId)
     
     local itemConfig = Config.Items[itemId]
     if not itemConfig then
+        for _, configuredItem in ipairs(Config.Items) do
+            if configuredItem.itemId == itemId then
+                itemConfig = configuredItem
+                break
+            end
+        end
+    end
+
+    if not itemConfig then
         return false, nil, string.format("Item '%s' does not exist", itemId)
     end
     
@@ -436,7 +445,8 @@ function Validation.PeriodicCleanup()
     local cleanupThreshold = 10 * Constants.TIME_MS.MINUTE -- 10 minutes
     
     for key, data in pairs(rateLimits) do
-        if currentTime - data.windowStart > cleanupThreshold then
+        local windowStart = data and data.windowStart
+        if not windowStart or currentTime - windowStart > cleanupThreshold then
             rateLimits[key] = nil
         end
     end

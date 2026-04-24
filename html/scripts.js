@@ -17,6 +17,13 @@ const CNRConfig = {
     }
 };
 
+if (typeof GetParentResourceName === 'function') {
+    const parentResourceName = GetParentResourceName();
+    if (parentResourceName) {
+        CNRConfig.init(parentResourceName);
+    }
+}
+
 window.fullItemConfig = null; // Will store Config.Items
 
 // Inventory state variables
@@ -63,14 +70,24 @@ window.addEventListener('message', function(event) {
         console.error('[CNR_NUI] Invalid message data received:', data);
         return;
     }
+
+    if (data.resourceName) {
+        CNRConfig.init(data.resourceName);
+        const dynamicOrigin = `nui://${CNRConfig.getResourceName()}`;
+        if (!allowedOrigins.includes(dynamicOrigin)) {
+            allowedOrigins.push(dynamicOrigin);
+        }
+    }
     
+    const action = data.action || data.type;
+
     // Ensure action is defined
-    if (!data.action || typeof data.action !== 'string') {
-        console.error('[CNR_NUI] Message missing or invalid action field:', data);
+    if (!action || typeof action !== 'string') {
+        console.error('[CNR_NUI] Message missing or invalid action/type field:', data);
         return;
     }
   
-    switch (data.action) {
+    switch (action) {
         case 'showRoleSelection':
             if (data.resourceName) {
                 CNRConfig.init(data.resourceName);
@@ -195,8 +212,8 @@ window.addEventListener('message', function(event) {
             toggleSpeedometer(data.show);
             break;
         case 'hideRoleSelection':
-            const roleMenu = document.getElementById('roleSelectionMenu');
-            if (roleMenu) roleMenu.style.display = 'none';            break;
+            hideRoleSelection();
+            break;
         case 'roleSelectionFailed':
             showToast(data.error || 'Failed to select role. Please try again.', 'error', 4000);
             showRoleSelection();
@@ -1266,12 +1283,31 @@ function showWantedNotification(stars, points, levelLabel) {
         notification.style.display = 'block';
         notification.style.opacity = '1';
 
-        // Auto-hide after 15 seconds (instead of 3)
-        wantedNotificationTimeout = setTimeout(() => {
-            hideWantedNotification();
-        }, 15000); // Increased from 3000ms to 15000ms
+        // Keep the current wanted level visible until the server clears it.
+        if (stars <= 0) {
+            wantedNotificationTimeout = setTimeout(() => {
+                hideWantedNotification();
+            }, 3000);
+        }
     } else {
-        // Stars haven't changed, just update the internal tracking
+        // Stars haven't changed, but the current wanted state still needs to stay accurate.
+        const notification = document.getElementById('wanted-notification');
+        if (notification) {
+            const wantedLevelEl = notification.querySelector('.wanted-level');
+            const wantedPointsEl = notification.querySelector('.wanted-points');
+
+            if (wantedLevelEl) {
+                wantedLevelEl.textContent = levelLabel || generateStarDisplay(stars);
+            }
+            if (wantedPointsEl) {
+                wantedPointsEl.textContent = `${points} Points`;
+            }
+            if (stars > 0) {
+                notification.style.display = 'block';
+                notification.style.opacity = '1';
+            }
+        }
+
         console.log('[CNR_NUI] Wanted level sync (no star change) - Stars:', stars, 'Points:', points);
     }
 }
@@ -1369,8 +1405,7 @@ function selectRole(selectedRole) {
         // }
         // Directly integrate for clarity or ensure handleRoleSelection is called:
         if (response && response.success) {
-            console.log('[CNR_NUI_ROLE] selectRole successful according to Lua. Calling hideRoleSelection().');
-            hideRoleSelection();
+            console.log('[CNR_NUI_ROLE] selectRole request accepted by Lua. Waiting for server confirmation.');
         } else if (response && response.error) {
             console.error("[CNR_NUI_ROLE] Role selection failed via NUI callback: " + response.error);
             showToast(response.error, 'error'); // Keep toast for user feedback
@@ -5060,6 +5095,7 @@ class HeistSystem {
         this.activeHeist = null;
         this.availableHeists = [];
         this.crewRoles = [];
+        this.equipmentShop = [];
         this.ownedEquipment = {};
         
         this.initializeEventListeners();
@@ -5109,10 +5145,13 @@ class HeistSystem {
         });
     }
 
-    openHeistPlanning(heistConfig, crewId) {
+    openHeistPlanning(heistConfig, crewId, crewRoles = [], equipmentShop = []) {
         this.isHeistPlanningOpen = true;
         this.selectedHeist = heistConfig;
         this.currentCrew = { id: crewId };
+        this.crewRoles = crewRoles;
+        this.equipmentShop = equipmentShop;
+        this.ownedEquipment = {};
         
         this.updateHeistDetails();
         this.loadAvailableHeists();
@@ -5234,36 +5273,23 @@ class HeistSystem {
     }
 
     loadCrewRoles() {
-        // This would typically come from server data
         const rolesGrid = document.getElementById('crew-roles-grid');
         if (!rolesGrid) return;
 
-        const exampleRoles = [
-            {
-                id: 'mastermind',
-                name: 'Mastermind',
-                description: 'Plans the heist and coordinates the crew',
-                bonuses: ['Planning Speed +25%', 'Crew Coordination +15%'],
-                available: true
-            },
-            {
-                id: 'hacker',
-                name: 'Hacker',
-                description: 'Specializes in electronic security bypass',
-                bonuses: ['Hacking Speed +50%', 'Camera Disable +30%'],
-                available: true
-            }
-        ];
+        rolesGrid.innerHTML = this.crewRoles.map(role => {
+            const assignedRoles = Object.values(this.currentCrew?.roles || {});
+            const isAvailable = !assignedRoles.includes(role.id);
 
-        rolesGrid.innerHTML = exampleRoles.map(role => `
-            <div class="role-card ${role.available ? 'available' : 'taken'}" data-role-id="${role.id}">
+            return `
+            <div class="role-card ${isAvailable ? 'available' : 'taken'}" data-role-id="${role.id}">
                 <div class="role-name">${role.name}</div>
                 <div class="role-description">${role.description}</div>
                 <div class="role-bonuses">
-                    ${role.bonuses.map(bonus => `<span class="bonus-tag">${bonus}</span>`).join('')}
+                    ${Object.entries(role.bonuses || {}).map(([bonusKey, bonusValue]) => `<span class="bonus-tag">${bonusKey.replace(/_/g, ' ')}: ${bonusValue}</span>`).join('')}
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     selectRole(roleCard) {
@@ -5281,28 +5307,8 @@ class HeistSystem {
         const equipmentGrid = document.getElementById('equipment-grid');
         if (!equipmentGrid) return;
 
-        // Example equipment (would come from server)
-        const equipment = [
-            {
-                id: 'lockpick',
-                name: 'Lockpick',
-                description: 'Basic lock bypassing tool',
-                price: 500,
-                category: 'basic',
-                requiredLevel: 1
-            },
-            {
-                id: 'drill',
-                name: 'Diamond Drill',
-                description: 'Drill through vault doors',
-                price: 2500,
-                category: 'advanced',
-                requiredLevel: 15
-            }
-        ];
-
-        equipmentGrid.innerHTML = equipment.map(item => `
-            <div class="equipment-item" data-equipment-id="${item.id}">
+        equipmentGrid.innerHTML = this.equipmentShop.map(item => `
+            <div class="equipment-item" data-equipment-id="${item.id}" data-category="${item.category || 'all'}">
                 <div class="equipment-name">${item.name}</div>
                 <div class="equipment-description">${item.description}</div>
                 <div class="equipment-price">$${item.price.toLocaleString()}</div>
@@ -5479,8 +5485,22 @@ class HeistSystem {
     }
 
     updateCrewInfo(crewData) {
+        if (!crewData) {
+            this.currentCrew = null;
+            this.ownedEquipment = {};
+            const crewList = document.getElementById('crew-members-list');
+            if (crewList) {
+                crewList.innerHTML = '';
+            }
+            this.updateRequiredEquipment();
+            this.updatePreHeistChecklist();
+            return;
+        }
+
         this.currentCrew = crewData;
+        this.ownedEquipment = crewData?.equipment || {};
         this.updateCrewDisplay();
+        this.updateRequiredEquipment();
         this.updatePreHeistChecklist();
     }
 
@@ -5488,17 +5508,27 @@ class HeistSystem {
         const crewList = document.getElementById('crew-members-list');
         if (!crewList || !this.currentCrew?.members) return;
 
-        crewList.innerHTML = this.currentCrew.members.map(member => `
+        crewList.innerHTML = this.currentCrew.members.map(member => {
+            const memberId = typeof member === 'object' ? member.id : member;
+            const memberName = typeof member === 'object' ? (member.name || `Player ${memberId}`) : `Player ${memberId}`;
+            const memberRoleId = typeof member === 'object'
+                ? member.role
+                : (this.currentCrew.roles?.[memberId] || this.currentCrew.roles?.[String(memberId)] || 'crew');
+            const roleConfig = this.crewRoles.find(role => role.id === memberRoleId);
+            const memberRole = roleConfig?.name || memberRoleId.replace(/_/g, ' ');
+
+            return `
             <div class="crew-member">
                 <div class="member-info">
-                    <div class="member-name">${member.name}</div>
-                    <div class="member-role">${member.role}</div>
+                    <div class="member-name">${memberName}</div>
+                    <div class="member-role">${memberRole}</div>
                 </div>
-                <div class="member-status ${member.online ? 'ready' : 'offline'}">
-                    ${member.online ? 'Ready' : 'Offline'}
+                <div class="member-status ready">
+                    Ready
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     showNotification(message, type = 'info') {
@@ -5529,9 +5559,10 @@ const originalMessageListener = window.addEventListener;
 
 window.addEventListener('message', function(event) {
     const data = event.data;
+    const messageType = data.action || data.type;
     
     // Banking system messages
-    switch (data.type) {
+    switch (messageType) {
         case 'openATM':
             if (bankingSystem) {
                 bankingSystem.openATM(data.atmData);
@@ -5556,6 +5587,15 @@ window.addEventListener('message', function(event) {
                 bankingSystem.updateTransactionHistory();
             }
             break;
+
+        case 'closeBanking':
+            if (bankingSystem) {
+                document.getElementById('atm-interface')?.classList.add('hidden');
+                document.getElementById('bank-interface')?.classList.add('hidden');
+                bankingSystem.isATMOpen = false;
+                bankingSystem.isBankOpen = false;
+            }
+            break;
             
         case 'showProgressBar':
             if (bankingSystem) {
@@ -5578,7 +5618,7 @@ window.addEventListener('message', function(event) {
         // Heist system messages
         case 'openHeistPlanning':
             if (heistSystem) {
-                heistSystem.openHeistPlanning(data.heistConfig, data.crewId);
+                heistSystem.openHeistPlanning(data.heistConfig, data.crewId, data.crewRoles, data.equipmentShop);
             }
             break;
             

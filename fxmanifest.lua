@@ -27,6 +27,7 @@ server_scripts {
     
     -- Consolidated server system (includes inventory, progression, and core logic)
     'server.lua',       -- Core server logic with consolidated systems (includes admin commands).
+    'system_test.lua',  -- Server-side system and performance testing commands.
 }
 
 -- Define client-side scripts.
@@ -57,4 +58,4 @@ export 'UpdateFullInventory'
 export 'EquipInventoryWeapons'
 
 -- Network events
-server_export 'GetCharacterForRoleSelection'
+server_export 'GetPlayerRoleSelectionSummary'

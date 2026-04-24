@@ -1450,9 +1450,6 @@ local integrationStatus = {
     startTime = 0
 }
 
--- Legacy compatibility layer
-local legacyFunctions = {}
-
 --- Initialize all refactored systems in the correct order
 function PlayerManager.InitializeIntegration()
     integrationStatus.startTime = GetGameTimer()
@@ -1525,12 +1522,6 @@ end
 function PlayerManager.SetupLegacyCompatibility()
     Log("[CNR_INTEGRATION] Setting up legacy compatibility layer...", Constants.LOG_LEVELS.INFO)
     
-    -- Store original functions if they exist
-    legacyFunctions.AddItemToPlayerInventory = AddItemToPlayerInventory
-    legacyFunctions.RemoveItemFromPlayerInventory = RemoveItemFromPlayerInventory
-    legacyFunctions.AddPlayerMoney = AddPlayerMoney
-    legacyFunctions.RemovePlayerMoney = RemovePlayerMoney
-    
     -- Replace with secure versions
     AddItemToPlayerInventory = function(playerId, itemId, quantity, itemDetails)
         local success, message = SecureInventory.AddItem(playerId, itemId, quantity, "legacy_add")
@@ -1543,12 +1534,12 @@ function PlayerManager.SetupLegacyCompatibility()
     end
     
     AddPlayerMoney = function(playerId, amount)
-        local success, message = SecureTransactions.AddMoney(playerId, amount, "legacy_add")
+        local success = SecureTransactions.AddMoney(playerId, amount, "legacy_add")
         return success
     end
     
     RemovePlayerMoney = function(playerId, amount)
-        local success, message = SecureTransactions.RemoveMoney(playerId, amount, "legacy_remove")
+        local success = SecureTransactions.RemoveMoney(playerId, amount, "legacy_remove")
         return success
     end
     
@@ -1698,7 +1689,7 @@ function PlayerManager.PerformHealthCheck()
     end
     
     -- Check performance
-    if PerformanceManager then
+    if PerformanceManager and PerformanceManager.GetMetrics then
         local metrics = PerformanceManager.GetMetrics()
         if metrics.memoryUsage > Constants.PERFORMANCE.MEMORY_WARNING_THRESHOLD_MB * 1024 then
             table.insert(issues, string.format("High memory usage: %.1fMB", metrics.memoryUsage / 1024))
@@ -1729,11 +1720,15 @@ function PlayerManager.LogSystemStats()
     end
     
     -- System-specific stats
-    if DataManager then DataManager.LogStats() end
-    if SecureInventory then SecureInventory.LogStats() end
-    if SecureTransactions then SecureTransactions.LogStats() end
+    local dataManagerLogStats = DataManager and DataManager.LogStats
+    local secureInventoryLogStats = SecureInventory and SecureInventory.LogStats
+    local secureTransactionsLogStats = SecureTransactions and SecureTransactions.LogStats
+
+    if dataManagerLogStats then dataManagerLogStats() end
+    if secureInventoryLogStats then secureInventoryLogStats() end
+    if secureTransactionsLogStats then secureTransactionsLogStats() end
     if PlayerManager then PlayerManager.LogStats() end
-    if PerformanceManager then PerformanceManager.LogStats() end
+    if PerformanceManager and PerformanceManager.LogStats then PerformanceManager.LogStats() end
     
     Log("=== END STATISTICS ===", "info", "CNR_INTEGRATION")
 end

@@ -1,4 +1,4 @@
-﻿-- server.lua
+-- Main server entrypoint
 
 -- Configuration shortcuts (Config must be loaded before Log if Log uses it)
 -- However, config.lua is a shared_script, so Config global should be available.
@@ -29,19 +29,31 @@ local MarkPlayerForInventorySave
 local SavePlayerDataImmediate
 
 -- Global state tables
-playersData = {}
-local copsOnDuty = {}
-local robbersActive = {}
-local jail = {}
-local wantedPlayers = {}
-local activeCooldowns = {}
-local purchaseHistory = {}
-local bannedPlayers = {}
-local k9Engagements = {}
-local activeBounties = {}
-local playerDeployedSpikeStripsCount = {} -- For extra_spike_strips perk
+local playersData = _G.playersData or {}
+local copsOnDuty = _G.copsOnDuty or {}
+local robbersActive = _G.robbersActive or {}
+local jail = _G.jail or {}
+local wantedPlayers = _G.wantedPlayers or {}
+local activeCooldowns = _G.activeCooldowns or {}
+local purchaseHistory = _G.purchaseHistory or {}
+local bannedPlayers = _G.bannedPlayers or {}
+local k9Engagements = _G.k9Engagements or {}
+local activeBounties = _G.activeBounties or {}
+local playerDeployedSpikeStripsCount = _G.playerDeployedSpikeStripsCount or {} -- For extra_spike_strips perk
 local activeSpikeStrips = {} -- To manage strip IDs and removal: {stripId = {copId = src, location = ...}}
 local nextSpikeStripId = 1
+
+_G.playersData = playersData
+_G.copsOnDuty = copsOnDuty
+_G.robbersActive = robbersActive
+_G.jail = jail
+_G.wantedPlayers = wantedPlayers
+_G.activeCooldowns = activeCooldowns
+_G.purchaseHistory = purchaseHistory
+_G.bannedPlayers = bannedPlayers
+_G.k9Engagements = k9Engagements
+_G.activeBounties = activeBounties
+_G.playerDeployedSpikeStripsCount = playerDeployedSpikeStripsCount
 
 -- ====================================================================
 -- Get Player Role Handler
@@ -373,6 +385,13 @@ local function GetPlayerMoney(playerId)
     return 0
 end
 
+local function GetPlayerLevel(playerId)
+    local pData = GetCnrPlayerData(playerId)
+    return (pData and tonumber(pData.level)) or 1
+end
+
+_G.GetPlayerLevel = GetPlayerLevel
+
 -- Function to add money to a player
 local function AddPlayerMoney(playerId, amount, type)
     type = type or 'cash' -- Assuming 'cash' is the primary type. Add handling for 'bank' if needed.
@@ -552,6 +571,20 @@ end
 
 -- OLD INVENTORY FUNCTIONS REMOVED - Using enhanced versions with save marking below
 -- InitializePlayerInventory is now handled by player_manager.lua
+
+local function FindConfigItemById(itemId)
+    if not itemId or type(Config.Items) ~= "table" then
+        return nil
+    end
+
+    for _, configItem in ipairs(Config.Items) do
+        if configItem.itemId == itemId then
+            return configItem
+        end
+    end
+
+    return nil
+end
 
 LoadPlayerData = function(playerId)
     -- Log(string.format("LoadPlayerData: Called for player ID %s.", playerId), "info")
@@ -1759,6 +1792,15 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
 
     -- Check if player data is loaded
     if not pData or not pData.isDataLoaded then
+        local attempts = 0
+        while attempts < 10 and (not pData or not pData.isDataLoaded) do
+            Citizen.Wait(500)
+            attempts = attempts + 1
+            pData = GetCnrPlayerData(pIdNum)
+        end
+    end
+
+    if not pData or not pData.isDataLoaded then
         Log(string.format("cnr:selectRole: Player data not ready for %s. pData exists: %s, isDataLoaded: %s", pIdNum, tostring(pData ~= nil), tostring(pData and pData.isDataLoaded or false)), "warn", "CNR_SERVER")
         TriggerClientEvent('cnr:roleSelected', src, false, "Player data is not ready. Please wait a moment and try again.")
         return
@@ -2118,9 +2160,10 @@ end))
 
 -- Table to track players who need inventory save
 local playersSavePending = {}
+_G.playersSavePending = playersSavePending
 
 -- Function to mark player for inventory save
-local function MarkPlayerForInventorySave(playerId)
+MarkPlayerForInventorySave = function(playerId)
     local pIdNum = tonumber(playerId)
     if pIdNum and pIdNum > 0 then
         playersSavePending[pIdNum] = true
@@ -2128,7 +2171,7 @@ local function MarkPlayerForInventorySave(playerId)
 end
 
 -- Function to save player data immediately (used for critical saves)
-local function SavePlayerDataImmediate(playerId, reason)
+SavePlayerDataImmediate = function(playerId, reason)
     reason = reason or "manual"
     local pIdNum = tonumber(playerId)
     if not pIdNum or pIdNum <= 0 then return false end
@@ -2408,13 +2451,7 @@ function AddItemToPlayerInventory(playerId, itemId, quantity, itemDetails)
     pData.inventory = pData.inventory or {}
 
     if not itemDetails or not itemDetails.name or not itemDetails.category then
-        local foundConfigItem = nil
-        for _, cfgItem in ipairs(Config.Items) do
-            if cfgItem.itemId == itemId then
-                foundConfigItem = cfgItem
-                break
-            end
-        end
+        local foundConfigItem = FindConfigItemById(itemId)
         if not foundConfigItem then
             Log(string.format("AddItemToPlayerInventory: CRITICAL - Item details not found in Config.Items for itemId '%s' and not passed correctly. Cannot add to inventory for player %s.", itemId, playerId), "error", "CNR_SERVER")
             return false, "Item configuration not found"
@@ -3349,7 +3386,7 @@ end)
 RegisterNetEvent('cnr:hackATM')
 AddEventHandler('cnr:hackATM', function(atmId)
     local src = source
-    local playerData = playerDataCache[src]
+    local playerData = GetCnrPlayerData(src)
     
     if not playerData or playerData.role ~= "robber" then
         TriggerClientEvent('cnr:showNotification', src, 'Access denied', 'error')
@@ -3384,7 +3421,7 @@ AddEventHandler('cnr:hackATM', function(atmId)
         -- Alert nearby cops
         local playerCoords = GetEntityCoords(GetPlayerPed(src))
         for _, playerId in pairs(GetPlayers()) do
-            local targetData = playerDataCache[tonumber(playerId)]
+            local targetData = GetCnrPlayerData(tonumber(playerId))
             if targetData and targetData.role == "cop" then
                 TriggerClientEvent('cnr:policeAlert', playerId, {
                     type = "ATM Hack",
@@ -3421,6 +3458,7 @@ end)
 -- Banking interest and loan processing (runs every hour)
 function ProcessBankingInterest()
     local now = os.time()
+    ResetDailyWithdrawals()
     
     for license, account in pairs(bankAccounts) do
         -- Process savings interest
@@ -3521,15 +3559,65 @@ function LoadBankingData()
     end
 end
 
+local function ScheduleBankingInterestProcessing()
+    SetTimeout(3600000, function()
+        ProcessBankingInterest()
+        ScheduleBankingInterestProcessing()
+    end)
+end
+
+local function ResolveEnhancedHeistConfig(playerId, requestedHeistId)
+    if not requestedHeistId or type(Config.EnhancedHeists) ~= "table" then
+        return nil
+    end
+
+    for _, heist in pairs(Config.EnhancedHeists) do
+        if heist.id == requestedHeistId then
+            return heist
+        end
+    end
+
+    local requestedType = tostring(requestedHeistId)
+    local typeAliases = {
+        bank = { major_bank = true, small_bank = true },
+        jewelry = { jewelry = true },
+        store = { jewelry = true },
+        casino = { casino = true },
+        vehicle = { vehicle_theft = true },
+        maritime = { maritime = true },
+        infiltration = { infiltration = true }
+    }
+
+    local allowedTypes = typeAliases[requestedType]
+    if not allowedTypes then
+        return nil
+    end
+
+    local playerPed = GetPlayerPed(playerId)
+    local playerCoords = playerPed and playerPed ~= 0 and GetEntityCoords(playerPed) or nil
+    local nearestHeist = nil
+    local nearestDistance = math.huge
+
+    for _, heist in pairs(Config.EnhancedHeists) do
+        if allowedTypes[heist.type] then
+            local distance = playerCoords and #(playerCoords - heist.location) or 0
+            if not nearestHeist or distance < nearestDistance then
+                nearestHeist = heist
+                nearestDistance = distance
+            end
+        end
+    end
+
+    return nearestHeist
+end
+
 -- Initialize banking system on resource start
 AddEventHandler('onResourceStart', function(resourceName)
     if GetCurrentResourceName() == resourceName then
         LoadBankingData()
         
         -- Start banking interest processing timer (every hour)
-        SetTimeout(3600000, function()
-            ProcessBankingInterest()
-        end)
+        ScheduleBankingInterestProcessing()
     end
 end)
 
@@ -3577,7 +3665,7 @@ end
 RegisterNetEvent('cnr:joinHeistCrew')
 AddEventHandler('cnr:joinHeistCrew', function(crewId, role)
     local src = source
-    local playerData = playerDataCache[src]
+    local playerData = GetCnrPlayerData(src)
     
     if not playerData or playerData.role ~= "robber" then
         TriggerClientEvent('cnr:showNotification', src, 'Only robbers can join heist crews', 'error')
@@ -3673,7 +3761,7 @@ end)
 RegisterNetEvent('cnr:startHeistPlanning')
 AddEventHandler('cnr:startHeistPlanning', function(heistId)
     local src = source
-    local playerData = playerDataCache[src]
+    local playerData = GetCnrPlayerData(src)
     
     if not playerData or playerData.role ~= "robber" then
         TriggerClientEvent('cnr:showNotification', src, 'Access denied', 'error')
@@ -3681,13 +3769,7 @@ AddEventHandler('cnr:startHeistPlanning', function(heistId)
     end
     
     -- Find heist config
-    local heistConfig = nil
-    for _, heist in pairs(Config.EnhancedHeists) do
-        if heist.id == heistId then
-            heistConfig = heist
-            break
-        end
-    end
+    local heistConfig = ResolveEnhancedHeistConfig(src, heistId)
     
     if not heistConfig then
         TriggerClientEvent('cnr:showNotification', src, 'Invalid heist', 'error')
@@ -3703,17 +3785,18 @@ AddEventHandler('cnr:startHeistPlanning', function(heistId)
     
     -- Check cooldown
     local now = os.time()
-    if heistCooldowns[heistId] and now - heistCooldowns[heistId] < heistConfig.cooldown then
-        local remaining = math.ceil((heistConfig.cooldown - (now - heistCooldowns[heistId])) / 60)
+    if heistCooldowns[heistConfig.id] and now - heistCooldowns[heistConfig.id] < heistConfig.cooldown then
+        local remaining = math.ceil((heistConfig.cooldown - (now - heistCooldowns[heistConfig.id])) / 60)
         TriggerClientEvent('cnr:showNotification', src, 'Heist on cooldown (' .. remaining .. ' minutes)', 'error')
         return
     end
     
     -- Create crew
-    local crewId = CreateHeistCrew(src, heistId)
+    local crewId = CreateHeistCrew(src, heistConfig.id)
     
     TriggerClientEvent('cnr:showNotification', src, 'Heist planning started. Recruit your crew!', 'success')
-    TriggerClientEvent('cnr:openHeistPlanning', src, heistConfig, crewId)
+    TriggerClientEvent('cnr:openHeistPlanning', src, heistConfig, crewId, Config.CrewRoles or {}, (Config.HeistEquipment and Config.HeistEquipment.items) or {})
+    TriggerClientEvent('cnr:updateCrewInfo', src, heistCrews[crewId])
 end)
 
 -- Purchase heist equipment
@@ -3826,7 +3909,7 @@ AddEventHandler('cnr:startEnhancedHeist', function()
     -- Check if enough cops online
     local copCount = 0
     for _, playerId in pairs(GetPlayers()) do
-        local playerData = playerDataCache[tonumber(playerId)]
+        local playerData = GetCnrPlayerData(tonumber(playerId))
         if playerData and playerData.role == "cop" then
             copCount = copCount + 1
         end
@@ -3868,7 +3951,7 @@ AddEventHandler('cnr:startEnhancedHeist', function()
     -- Alert police
     local heistLocation = heistConfig.location
     for _, playerId in pairs(GetPlayers()) do
-        local playerData = playerDataCache[tonumber(playerId)]
+        local playerData = GetCnrPlayerData(tonumber(playerId))
         if playerData and playerData.role == "cop" then
             TriggerClientEvent('cnr:policeAlert', playerId, {
                 type = "Major Heist",
@@ -3963,13 +4046,14 @@ function CompleteHeist(crewId)
             xpReward = 75 -- Default for other heist types
         end
         
-        AddXP(memberId, xpReward, "Enhanced heist completion")
+        AddXP(memberId, xpReward, "robber", "enhanced_heist_completion")
         
         TriggerClientEvent('cnr:heistCompleted', memberId, {
             success = true,
             reward = rewardPerMember,
             xp = xpReward,
-            heistName = heistConfig.name
+            heistName = heistConfig.name,
+            duration = os.time() - (heist.startTime or os.time())
         })
         
         TriggerClientEvent('cnr:showNotification', memberId, 'Heist completed! Reward: $' .. rewardPerMember, 'success')
@@ -3992,7 +4076,8 @@ function FailHeist(crewId, reason)
         TriggerClientEvent('cnr:heistCompleted', memberId, {
             success = false,
             reason = reason,
-            heistName = heist.heistConfig.name
+            heistName = heist.heistConfig.name,
+            duration = os.time() - (heist.startTime or os.time())
         })
         
         TriggerClientEvent('cnr:showNotification', memberId, 'Heist failed: ' .. reason, 'error')
@@ -4062,6 +4147,8 @@ AddEventHandler('cnr:getAvailableHeists', function()
                 minReward = heist.minReward,
                 maxReward = heist.maxReward,
                 duration = heist.duration,
+                stages = heist.stages,
+                equipment = heist.equipment,
                 onCooldown = onCooldown,
                 cooldownRemaining = onCooldown and math.ceil((heist.cooldown - (now - heistCooldowns[heist.id])) / 60) or 0
             })
@@ -4079,8 +4166,9 @@ end)
 --     INVENTORY SYSTEM (CONSOLIDATED)
 -- =====================================
 
--- Helper function to get player data - uses global function from server.lua
-local function GetCnrPlayerData(playerId)
+-- Helper function to get player data from the shared server state without
+-- shadowing the primary local GetCnrPlayerData defined earlier in this file.
+local function GetSharedCnrPlayerData(playerId)
     if _G.GetCnrPlayerData then
         return _G.GetCnrPlayerData(playerId)
     end
@@ -4098,11 +4186,11 @@ end
 
 -- CanCarryItem: Checks if a player can carry an item
 function CanCarryItem(playerId, itemId, quantity)
-    local pData = GetCnrPlayerData(playerId)
+    local pData = GetSharedCnrPlayerData(playerId)
     if not pData or not pData.inventory then return false end
     
-    -- Check if Config.Items exists for the item
-    if not Config.Items[itemId] then
+    -- Check if Config.Items contains the item
+    if not FindConfigItemById(itemId) then
         Log("CanCarryItem: Unknown item ID: " .. tostring(itemId), "warn", "CNR_INV_SERVER")
         return false
     end
@@ -4110,7 +4198,7 @@ function CanCarryItem(playerId, itemId, quantity)
     -- Calculate current inventory count
     local currentCount = 0
     for _, item in pairs(pData.inventory) do
-        currentCount = currentCount + (item.quantity or 0)
+        currentCount = currentCount + (item.count or item.quantity or 0)
     end
     
     -- Basic slot limit check (50 items max for simplicity)
@@ -4214,7 +4302,7 @@ end
 
 -- Get player's inventory
 function GetPlayerInventory(playerId)
-    local pData = GetCnrPlayerData(playerId)
+    local pData = GetSharedCnrPlayerData(playerId)
     if not pData or not pData.inventory then return {} end
     return pData.inventory
 end
@@ -4235,7 +4323,7 @@ end)
 RegisterNetEvent('cnr:requestMyInventory')
 AddEventHandler('cnr:requestMyInventory', function()
     local src = source
-    local pData = GetCnrPlayerData(src)
+    local pData = GetSharedCnrPlayerData(src)
     if pData and pData.inventory then
         TriggerClientEvent('cnr:receiveMyInventory', src, MinimizeInventoryForSync(pData.inventory))
         Log("Sent inventory to client " .. src, "info", "CNR_INV_SERVER")
@@ -4341,7 +4429,7 @@ end
 function AwardXP(playerId, amount, reason)
     if not Config.LevelingSystemEnabled then return end
     
-    local pData = GetCnrPlayerData(playerId)
+    local pData = GetSharedCnrPlayerData(playerId)
     if not pData then return end
     
     -- Apply prestige multiplier if applicable
@@ -4393,7 +4481,7 @@ end
 RegisterNetEvent('cnr:requestProgressionData')
 AddEventHandler('cnr:requestProgressionData', function()
     local src = source
-    local pData = GetCnrPlayerData(src)
+    local pData = GetSharedCnrPlayerData(src)
     if pData then
         TriggerClientEvent('cnr:updateProgressionData', src, {
             xp = pData.xp or 0,
@@ -4529,7 +4617,7 @@ RegisterCommand("setcash", function(source, args, rawCommand)
         Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) executed: %s", SafeGetPlayerName(source), source, rawCommand), Constants.LOG_LEVELS.INFO)
         
         -- Set cash directly (since we're already on server)
-        local pData = GetCnrPlayerData(targetId)
+        local pData = GetSharedCnrPlayerData(targetId)
         if pData then
             pData.money = validatedAmount
             DataManager.MarkPlayerForSave(targetId)
@@ -4549,13 +4637,14 @@ end, false)
 --      Export Functions
 -- =========================
 
--- Export function for getting character data for role selection
-function GetCharacterForRoleSelection(playerId)
+-- Export a lightweight role-selection summary without colliding with the
+-- slot-based GetCharacterForRoleSelection API from player_manager.lua.
+function GetPlayerRoleSelectionSummary(playerId)
     if not playerId or not IsValidPlayer(playerId) then
         return nil
     end
     
-    local playerData = GetCnrPlayerData(playerId)
+    local playerData = GetSharedCnrPlayerData(playerId)
     if not playerData then
         return nil
     end

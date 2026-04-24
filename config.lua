@@ -537,7 +537,9 @@ Config.WantedSettings = {
         assault                    = 6,    -- General assault (non-specific)
         trespassing                = 2,    -- Entering private property
         vandalism                  = 1,    -- Damaging property
-        shoplifting                = 2     -- Stealing from shops without armed robbery
+        shoplifting                = 2,    -- Stealing from shops without armed robbery
+        atm_hack                   = 10,   -- Hacking an ATM
+        heist_participation        = 15    -- Participating in an active heist
     },
     decayRatePoints      = 1,    -- Amount of wanted points to decay per interval.
     decayIntervalMs      = 20000,-- Milliseconds (20 seconds) - how often the decay check runs.
@@ -1979,12 +1981,11 @@ Config.CrewRoles = {
 Config.SpeedLimitMph = 60.0
 
 -- Keybind configurations
-Config.Keybinds = {
-    openInventory = 244,      -- M Key (INPUT_INTERACTION_MENU)
-    toggleAdminPanel = 289,   -- F2 Key
-    openStore = 38,           -- E Key (INPUT_CONTEXT)
-    openCharacterEditor = 167 -- F6 Key
-}
+Config.Keybinds = Config.Keybinds or {}
+Config.Keybinds.toggleAdminPanel = Config.Keybinds.toggleAdminPanel or 289
+Config.Keybinds.openStore = Config.Keybinds.openStore or 38
+Config.Keybinds.openCharacterEditor = Config.Keybinds.openCharacterEditor or 170
+Config.Keybinds.openInventoryKey = Config.Keybinds.openInventoryKey or "I"
 
 -- Contraband dealer locations
 Config.ContrabandDealers = {
@@ -2005,34 +2006,55 @@ Config.ContrabandDealers = {
 }
 
 -- Wanted system settings
-Config.WantedSettings = {
-    levels = {
-        { stars = 1, description = "Minor Crime", bounty = 1000 },
-        { stars = 2, description = "Moderate Crime", bounty = 2500 },
-        { stars = 3, description = "Serious Crime", bounty = 5000 },
-        { stars = 4, description = "Major Crime", bounty = 10000 },
-        { stars = 5, description = "Most Wanted", bounty = 25000 }
-    }
+local supplementalWantedLevels = {
+    { stars = 1, description = "Minor Crime", bounty = 1000 },
+    { stars = 2, description = "Moderate Crime", bounty = 2500 },
+    { stars = 3, description = "Serious Crime", bounty = 5000 },
+    { stars = 4, description = "Major Crime", bounty = 10000 },
+    { stars = 5, description = "Most Wanted", bounty = 25000 }
 }
 
+Config.WantedSettings = Config.WantedSettings or {}
+Config.WantedSettings.levels = Config.WantedSettings.levels or supplementalWantedLevels
+
+for index, fallbackLevel in ipairs(supplementalWantedLevels) do
+    local configuredLevel = Config.WantedSettings.levels[index]
+    if not configuredLevel then
+        Config.WantedSettings.levels[index] = fallbackLevel
+    else
+        for key, value in pairs(fallbackLevel) do
+            if configuredLevel[key] == nil then
+                configuredLevel[key] = value
+            end
+        end
+    end
+end
+
 -- Character editor configuration
-Config.CharacterEditor = {
-    defaultCharacter = {
-        model = "mp_m_freemode_01",
-        face = 0,
-        skin = 0,
-        hair = 0,
-        hairColor = 0,
-        eyeColor = 0,
-        beard = 0,
-        beardColor = 0,
-        eyebrows = 0,
-        eyebrowsColor = 0,
-        makeup = 0,
-        lipstick = 0,
-        tattoos = {}
-    }
+Config.CharacterEditor = Config.CharacterEditor or {}
+Config.CharacterEditor.defaultCharacter = Config.CharacterEditor.defaultCharacter or {}
+
+local supplementalDefaultCharacter = {
+    model = "mp_m_freemode_01",
+    face = 0,
+    skin = 0,
+    hair = 0,
+    hairColor = 0,
+    eyeColor = 0,
+    beard = 0,
+    beardColor = 0,
+    eyebrows = 0,
+    eyebrowsColor = 0,
+    makeup = 0,
+    lipstick = 0,
+    tattoos = {}
 }
+
+for key, value in pairs(supplementalDefaultCharacter) do
+    if Config.CharacterEditor.defaultCharacter[key] == nil then
+        Config.CharacterEditor.defaultCharacter[key] = value
+    end
+end
 
 -- Leveling system configuration
 Config.LevelingSystemEnabled = true
