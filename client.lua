@@ -349,7 +349,13 @@ function EquipInventoryWeapons()
                     end
 
                     GiveWeaponToPed(playerPed, weaponHash, ammoCount, false, false)
-                    Citizen.Wait(300)
+                    Citizen.Wait(150)
+
+                    if not HasPedGotWeapon(playerPed, weaponHash, false) and GiveDelayedWeaponToPed then
+                        GiveDelayedWeaponToPed(playerPed, weaponHash, ammoCount, false)
+                        Citizen.Wait(150)
+                    end
+
                     SetPedAmmo(playerPed, weaponHash, ammoCount)
                     
                     local hasWeapon = HasPedGotWeapon(playerPed, weaponHash, false)
@@ -569,6 +575,17 @@ end
 function ApplyCharacterData(characterData, ped)
     if not characterData or not ped or not DoesEntityExist(ped) then
         return false
+    end
+
+    for propId = 0, 7 do
+        ClearPedProp(ped, propId)
+    end
+
+    local clothingComponents = characterData.components or {}
+    for componentId = 0, 11 do
+        if componentId ~= 0 and componentId ~= 2 and not clothingComponents[tostring(componentId)] and not clothingComponents[componentId] then
+            SetPedComponentVariation(ped, componentId, 0, 0, 0)
+        end
     end
 
     SetPedHeadBlendData(ped, characterData.face or 0, characterData.face or 0, 0, 
@@ -4616,6 +4633,43 @@ local function GetLocalInventoryItemCount(itemId)
     return tonumber(itemData) or 0
 end
 
+local function PushLocalInventoryToNui()
+    SendNUIMessage({
+        action = 'updateInventory',
+        inventory = localPlayerInventory
+    })
+
+    SendNUIMessage({
+        action = 'refreshSellListIfNeeded'
+    })
+end
+
+local function ApplyLocalInventoryDelta(itemId, delta)
+    if not localPlayerInventory or not localPlayerInventory[itemId] then
+        return
+    end
+
+    local itemData = localPlayerInventory[itemId]
+    if type(itemData) == "table" then
+        local newCount = math.max(0, (tonumber(itemData.count or itemData.quantity or 0) or 0) + delta)
+        itemData.count = newCount
+        itemData.quantity = nil
+
+        if newCount <= 0 then
+            localPlayerInventory[itemId] = nil
+        end
+    else
+        local newCount = math.max(0, (tonumber(itemData) or 0) + delta)
+        if newCount <= 0 then
+            localPlayerInventory[itemId] = nil
+        else
+            localPlayerInventory[itemId] = newCount
+        end
+    end
+
+    PushLocalInventoryToNui()
+end
+
 local function UseLocalInventoryItem(itemId)
     if GetLocalInventoryItemCount(itemId) <= 0 then
         return false, "Item not found in inventory."
@@ -4627,6 +4681,7 @@ local function UseLocalInventoryItem(itemId)
     end
 
     if result.consumed then
+        ApplyLocalInventoryDelta(itemId, -1)
         TriggerServerEvent('cnr:useInventoryItem', itemId)
     end
 
@@ -4651,27 +4706,55 @@ RegisterKeyMapping('+cnr_deployspikestrip', 'Deploy Spike Strip', 'keyboard', 'G
 Citizen.CreateThread(function()
     local recentlySpikedVehicles = {}
 
+    local function getVehiclesToCheck()
+        if type(GetGamePool) == "function" then
+            return GetGamePool('CVehicle') or {}
+        end
+
+        local playerVehicle = GetVehiclePedIsIn(PlayerPedId(), false)
+        if playerVehicle and playerVehicle ~= 0 then
+            return { playerVehicle }
+        end
+
+        return {}
+    end
+
+    local function burstVehicleTyres(vehicle)
+        if not NetworkHasControlOfEntity(vehicle) then
+            NetworkRequestControlOfEntity(vehicle)
+        end
+
+        for tyreIndex = 0, 7 do
+            SetVehicleTyreBurst(vehicle, tyreIndex, true, 1000.0)
+        end
+    end
+
     while true do
         Citizen.Wait(150)
 
         if #currentSpikeStrips > 0 then
-            local playerPed = PlayerPedId()
-            local vehicle = GetVehiclePedIsIn(playerPed, false)
+            local vehicles = getVehiclesToCheck()
 
-            if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
-                local vehicleCoords = GetEntityCoords(vehicle)
-
-                for i = #currentSpikeStrips, 1, -1 do
-                    local spikeStrip = currentSpikeStrips[i]
-                    if not DoesEntityExist(spikeStrip) then
-                        table.remove(currentSpikeStrips, i)
-                    else
-                        local stripCoords = GetEntityCoords(spikeStrip)
-                        if #(vehicleCoords - stripCoords) <= 3.2 and (recentlySpikedVehicles[vehicle] or 0) < GetGameTimer() then
-                            for tyreIndex = 0, 7 do
-                                SetVehicleTyreBurst(vehicle, tyreIndex, true, 1000.0)
+            for i = #currentSpikeStrips, 1, -1 do
+                local spikeStrip = currentSpikeStrips[i]
+                if not DoesEntityExist(spikeStrip) then
+                    table.remove(currentSpikeStrips, i)
+                else
+                    local stripCoords = GetEntityCoords(spikeStrip)
+                    for _, vehicle in ipairs(vehicles) do
+                        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+                            local vehicleKey = NetworkGetNetworkIdFromEntity(vehicle) or vehicle
+                            if vehicleKey == 0 then
+                                vehicleKey = vehicle
                             end
-                            recentlySpikedVehicles[vehicle] = GetGameTimer() + 5000
+
+                            if (recentlySpikedVehicles[vehicleKey] or 0) < GetGameTimer() then
+                                local vehicleCoords = GetEntityCoords(vehicle)
+                                if #(vehicleCoords - stripCoords) <= 4.4 then
+                                    burstVehicleTyres(vehicle)
+                                    recentlySpikedVehicles[vehicleKey] = GetGameTimer() + 5000
+                                end
+                            end
                         end
                     end
                 end

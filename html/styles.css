@@ -6872,8 +6872,12 @@ body {
 
 #store-menu .action-overlay {
     border-radius: 8px;
-    background: rgba(20, 28, 48, 0.94);
-    gap: 8px;
+    background: rgba(20, 28, 48, 0.82);
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    padding: 14px;
+    pointer-events: none;
 }
 
 #store-menu .action-overlay .quantity-input {
@@ -6881,6 +6885,9 @@ body {
     height: 32px;
     margin: 0;
     border-radius: 6px;
+    padding: 0 8px;
+    box-sizing: border-box;
+    pointer-events: auto;
 }
 
 #store-menu .action-overlay .action-btn {
@@ -6890,6 +6897,7 @@ body {
     border-radius: 6px;
     background: #4a90e2;
     color: #fff;
+    pointer-events: auto;
 }
 
 @media (max-width: 900px) {

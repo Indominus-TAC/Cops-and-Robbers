@@ -586,6 +586,20 @@ local function FindConfigItemById(itemId)
     return nil
 end
 
+local function FindVendorByName(storeName)
+    if not storeName or type(Config.NPCVendors) ~= "table" then
+        return nil
+    end
+
+    for _, vendor in ipairs(Config.NPCVendors) do
+        if vendor.name == storeName then
+            return vendor
+        end
+    end
+
+    return nil
+end
+
 local roleStarterLoadouts = {
     cop = {
         minimumCash = Config.DefaultStartMoney or 5000,
@@ -632,7 +646,12 @@ local function EnsureRoleStarterState(playerId, selectedRole)
     for _, starterItem in ipairs(starterConfig.items) do
         local configItem = FindConfigItemById(starterItem.itemId)
         local existingItem = pData.inventory[starterItem.itemId]
-        local currentCount = existingItem and (existingItem.count or existingItem.quantity or 0) or 0
+        local currentCount = 0
+        if type(existingItem) == "table" then
+            currentCount = tonumber(existingItem.count or existingItem.quantity or 0) or 0
+        elseif existingItem ~= nil then
+            currentCount = tonumber(existingItem) or 0
+        end
 
         if currentCount < starterItem.count then
             pData.inventory[starterItem.itemId] = {
@@ -641,10 +660,17 @@ local function EnsureRoleStarterState(playerId, selectedRole)
                 category = (configItem and configItem.category) or "Utility",
                 itemId = starterItem.itemId
             }
-        elseif existingItem then
+        elseif type(existingItem) == "table" then
             existingItem.name = existingItem.name or ((configItem and configItem.name) or starterItem.itemId)
             existingItem.category = existingItem.category or ((configItem and configItem.category) or "Utility")
             existingItem.itemId = existingItem.itemId or starterItem.itemId
+        elseif existingItem ~= nil then
+            pData.inventory[starterItem.itemId] = {
+                count = currentCount,
+                name = (configItem and configItem.name) or starterItem.itemId,
+                category = (configItem and configItem.category) or "Utility",
+                itemId = starterItem.itemId
+            }
         end
     end
 
@@ -1983,8 +2009,12 @@ AddEventHandler('cops_and_robbers:getItemList', function(storeType, vendorItemId
         return
     end
 
-    -- The vendorItemIds from client (originating from Config.NPCVendors[storeName].items) is a list of strings.
-    -- We need to transform this into a list of full item objects using Config.Items.
+    local serverVendor = FindVendorByName(storeName)
+    if serverVendor and type(serverVendor.items) == "table" then
+        vendorItemIds = serverVendor.items
+    end
+
+    -- The item IDs are transformed into full item objects using Config.Items.
     if not vendorItemIds or type(vendorItemIds) ~= 'table' then
         Log('[CNR_SERVER_ERROR] Item ID list missing or not a table for store ' .. tostring(storeName) .. ' from ' .. tostring(src), "error", "CNR_SERVER")
         TriggerClientEvent('cops_and_robbers:sendItemList', src, storeName, {}) -- Send empty list on error
@@ -2887,14 +2917,39 @@ Log("Enhanced Progression System integration loaded", "info", "CNR_SERVER")
 
 function RemoveItemFromPlayerInventory(playerId, itemId, quantity)
     local pData = GetCnrPlayerData(playerId)
-    if not pData or not pData.inventory or not pData.inventory[itemId] or pData.inventory[itemId].count < quantity then
+    if not pData or not pData.inventory or not pData.inventory[itemId] then
         return false, "Item not found or insufficient quantity"
     end
 
-    pData.inventory[itemId].count = pData.inventory[itemId].count - quantity
+    quantity = tonumber(quantity) or 1
+    local existingItem = pData.inventory[itemId]
+    local currentCount = 0
 
-    if pData.inventory[itemId].count <= 0 then
+    if type(existingItem) == "table" then
+        currentCount = tonumber(existingItem.count or existingItem.quantity or 0) or 0
+    else
+        currentCount = tonumber(existingItem) or 0
+    end
+
+    if currentCount < quantity then
+        return false, "Item not found or insufficient quantity"
+    end
+
+    local newCount = currentCount - quantity
+
+    if newCount <= 0 then
         pData.inventory[itemId] = nil
+    elseif type(existingItem) == "table" then
+        existingItem.count = newCount
+        existingItem.quantity = nil
+    else
+        local configItem = FindConfigItemById(itemId)
+        pData.inventory[itemId] = {
+            count = newCount,
+            itemId = itemId,
+            name = (configItem and configItem.name) or itemId,
+            category = (configItem and configItem.category) or "Utility"
+        }
     end
 
     -- Mark for save

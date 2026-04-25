@@ -1145,9 +1145,10 @@ function createInventorySlot(item, type = 'buy') {
 }
 
 function appendStoreItemIcon(container, item) {
-    const icon = document.createElement('i');
-    icon.className = `item-icon fa-solid ${getStoreItemIconClass(item)}`;
+    const icon = document.createElement('div');
+    icon.className = 'item-icon';
     icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = item?.icon || getItemIcon(item);
     container.appendChild(icon);
 }
 
