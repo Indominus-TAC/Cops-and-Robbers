@@ -2595,6 +2595,79 @@ body::before {
     margin-right: 10px;
 }
 
+#police-menu,
+.role-action-menu {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(440px, calc(100vw - 32px));
+    background-color: rgba(20, 20, 20, 0.94);
+    border: 2px solid #2563eb;
+    border-radius: 10px;
+    color: white;
+    padding: 20px;
+    z-index: 1000;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
+
+#police-menu .menu-header,
+.role-action-menu .menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.65);
+    padding-bottom: 10px;
+}
+
+#police-menu .menu-options,
+.role-action-menu .menu-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#police-menu .menu-btn,
+.role-action-menu .menu-btn {
+    background-color: rgba(40, 40, 40, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.menu-inline-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+}
+
+.menu-inline-form input {
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: white;
+    padding: 12px;
+}
+
+.menu-result {
+    min-height: 20px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 /* ==========================================================================
    Jail Timer Styles
    ========================================================================== */
@@ -3249,6 +3322,13 @@ body::before {
     box-shadow: 
         0 20px 40px rgba(239, 68, 68, 0.3),
         0 0 0 1px rgba(239, 68, 68, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.civilian-role:hover .role-card-inner {
+    box-shadow:
+        0 20px 40px rgba(16, 185, 129, 0.22),
+        0 0 0 1px rgba(16, 185, 129, 0.18),
         inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 

@@ -2559,73 +2559,92 @@ function hideRobberMenu() {
 }
 
 function setupRobberMenuListeners() {
+    const bindOnce = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el && !el.hasEventListener) {
+            el.addEventListener('click', handler);
+            el.hasEventListener = true;
+        }
+    };
+
     // Close button
-    const closeBtn = document.getElementById('robber-menu-close-btn');
-    if (closeBtn && !closeBtn.hasEventListener) {
-        closeBtn.addEventListener('click', function() {
-            hideRobberMenu();
-        });
-        closeBtn.hasEventListener = true;
-    }
-    
-    // Start heist button
-    const startHeistBtn = document.getElementById('start-heist-btn');
-    if (startHeistBtn && !startHeistBtn.hasEventListener) {
-        startHeistBtn.addEventListener('click', function() {
-            console.log('[CNR_ROBBER_MENU] Start heist button clicked');
-            fetch(`https://${CNRConfig.getResourceName()}/startHeist`, {
+    bindOnce('robber-menu-close-btn', hideRobberMenu);
+    bindOnce('robber-call-vehicle-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/callRoleVehicle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'robber' })
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error requesting vehicle:', error));
+        hideRobberMenu();
+    });
+    bindOnce('robber-create-crew-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/startHeist`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error creating crew:', error));
+        hideRobberMenu();
+    });
+    bindOnce('start-heist-btn', () => {
+        console.log('[CNR_ROBBER_MENU] Start heist button clicked');
+        fetch(`https://${CNRConfig.getResourceName()}/startHeist`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error triggering heist:', error));
+        hideRobberMenu();
+    });
+    bindOnce('robber-wanted-status-btn', async () => {
+        const resultEl = document.getElementById('robber-status-result');
+        try {
+            const response = await fetch(`https://${CNRConfig.getResourceName()}/getRobberStatus`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
-            }).catch(error => console.error('[CNR_ROBBER_MENU] Error triggering heist:', error));
-            hideRobberMenu();
-        });
-        startHeistBtn.hasEventListener = true;
-    }
-    
-    // View bounties button
-    const viewBountiesBtn = document.getElementById('view-bounties-btn');
-    if (viewBountiesBtn && !viewBountiesBtn.hasEventListener) {
-        viewBountiesBtn.addEventListener('click', function() {
-            console.log('[CNR_ROBBER_MENU] View bounties button clicked');
-            fetch(`https://${CNRConfig.getResourceName()}/viewBounties`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            }).catch(error => console.error('[CNR_ROBBER_MENU] Error viewing bounties:', error));
-            hideRobberMenu();
-        });
-        viewBountiesBtn.hasEventListener = true;
-    }
-    
-    // Find hideout button
-    const findHideoutBtn = document.getElementById('find-hideout-btn');
-    if (findHideoutBtn && !findHideoutBtn.hasEventListener) {
-        findHideoutBtn.addEventListener('click', function() {
-            console.log('[CNR_ROBBER_MENU] Find hideout button clicked');
-            fetch(`https://${CNRConfig.getResourceName()}/findHideout`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            }).catch(error => console.error('[CNR_ROBBER_MENU] Error finding hideout:', error));
-            hideRobberMenu();
-        });
-        findHideoutBtn.hasEventListener = true;
-    }
-    
-    // Buy contraband button
-    const buyContrabandBtn = document.getElementById('buy-contraband-btn');
-    if (buyContrabandBtn && !buyContrabandBtn.hasEventListener) {
-        buyContrabandBtn.addEventListener('click', function() {
-            console.log('[CNR_ROBBER_MENU] Buy contraband button clicked');
-            fetch(`https://${CNRConfig.getResourceName()}/buyContraband`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})            }).catch(error => console.error('[CNR_ROBBER_MENU] Error buying contraband:', error));
-            hideRobberMenu();
-        });
-        buyContrabandBtn.hasEventListener = true;
-    }
+            });
+            const result = await response.json();
+            if (resultEl) {
+                if (result.success) {
+                    resultEl.textContent = result.isWanted
+                        ? `Wanted: ${result.wantedStars || 0} stars (${result.wantedLevel || 0} heat)`
+                        : 'You are currently clean.';
+                } else {
+                    resultEl.textContent = result.error || 'Unable to fetch your status.';
+                }
+            }
+        } catch (error) {
+            if (resultEl) {
+                resultEl.textContent = 'Unable to fetch your status.';
+            }
+        }
+    });
+    bindOnce('view-bounties-btn', () => {
+        console.log('[CNR_ROBBER_MENU] View bounties button clicked');
+        fetch(`https://${CNRConfig.getResourceName()}/viewBounties`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error viewing bounties:', error));
+        hideRobberMenu();
+    });
+    bindOnce('find-hideout-btn', () => {
+        console.log('[CNR_ROBBER_MENU] Find hideout button clicked');
+        fetch(`https://${CNRConfig.getResourceName()}/findHideout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error finding hideout:', error));
+        hideRobberMenu();
+    });
+    bindOnce('buy-contraband-btn', () => {
+        console.log('[CNR_ROBBER_MENU] Buy contraband button clicked');
+        fetch(`https://${CNRConfig.getResourceName()}/buyContraband`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error buying contraband:', error));
+        hideRobberMenu();
+    });
 }
 
 // ====================================================================

@@ -110,6 +110,35 @@
                 </div>
             </div>
         </div>
+
+        <div class="role-option civilian-role">
+            <div class="role-card-inner">
+                <div class="role-header">
+                    <div class="role-icon-container">
+                        <i class="fas fa-user role-icon"></i>
+                        <div class="role-icon-glow"></div>
+                    </div>
+                    <div class="role-info">
+                        <h2>Civilian</h2>
+                        <span class="role-badge">Free Roam</span>
+                    </div>
+                </div>
+                <div class="role-description">
+                    <p>Stay out of the war and make your own way through the city. Civilian life is the best fit for casual jobs, exploration, and low-profile play.</p>
+                    <div class="role-features">
+                        <span class="feature-tag"><i class="fas fa-briefcase"></i> Casual Work</span>
+                        <span class="feature-tag"><i class="fas fa-car-side"></i> Civilian Vehicles</span>
+                        <span class="feature-tag"><i class="fas fa-city"></i> Free Roam</span>
+                    </div>
+                </div>
+                <div class="role-actions">
+                    <button id="civilian-btn" data-role="civilian" class="role-select-btn primary-btn" aria-label="Select Civilian Role">
+                        <i class="fas fa-play"></i>
+                        <span>Join as Civilian</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </section>    <!-- Store Section -->
     <section id="store-menu" class="hidden" role="dialog" aria-labelledby="store-title" aria-modal="true">
         <div class="store-header">
@@ -360,8 +389,17 @@
             </button>
         </div>
         <div class="menu-options">
+            <button id="robber-call-vehicle-btn" class="menu-btn">
+                <span class="icon">🚗</span>Call Getaway Vehicle
+            </button>
+            <button id="robber-create-crew-btn" class="menu-btn">
+                <span class="icon">👥</span>Create Heist Crew
+            </button>
             <button id="start-heist-btn" class="menu-btn">
                 <span class="icon">💰</span>Start Heist
+            </button>
+            <button id="robber-wanted-status-btn" class="menu-btn">
+                <span class="icon">⚠️</span>Check Wanted Status
             </button>
             <button id="view-bounties-btn" class="menu-btn">
                 <span class="icon">🔍</span>View Bounties
@@ -372,6 +410,7 @@
             <button id="buy-contraband-btn" class="menu-btn">
                 <span class="icon">📦</span>Buy Contraband
             </button>
+            <div id="robber-status-result" class="menu-result"></div>
         </div>
     </section>
 

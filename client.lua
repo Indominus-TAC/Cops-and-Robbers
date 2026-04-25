@@ -22,6 +22,7 @@ RegisterNetEvent('cops_and_robbers:sendPlayerInventory')
 RegisterNetEvent('cops_and_robbers:buyResult')
 RegisterNetEvent('cnr:showAdminPanel')
 RegisterNetEvent('cnr:showRobberMenu')
+RegisterNetEvent('cnr:showPoliceMenu')
 RegisterNetEvent('cnr:xpGained')
 RegisterNetEvent('cnr:levelUp')
 RegisterNetEvent('cops_and_robbers:updateWantedDisplay')
@@ -38,6 +39,8 @@ RegisterNetEvent('cnr:applyCharacterData')
 RegisterNetEvent('cnr:loadedPlayerCharacters')
 RegisterNetEvent('cnr:characterSaveResult')
 RegisterNetEvent('cnr:characterDeleteResult')
+RegisterNetEvent('cnr:updateBankingDetails')
+RegisterNetEvent('cnr:lookupRobberInfoResult')
 RegisterNetEvent('cnr:receiveCharacterForRole')
 RegisterNetEvent('cnr:setPlayerRole')
 RegisterNetEvent('cnr:showWantedNotification')
@@ -142,6 +145,8 @@ local clientConfigItems = nil
 local isInventoryOpen = false
 local localPlayerInventory = {}
 local localPlayerEquippedItems = {}
+local pendingPoliceLookupCallbacks = {}
+local roleSelectionShownForCurrentDeath = false
 
 -- Function to get the items, accessible by other parts of this script
 function GetClientConfigItems()
@@ -1500,6 +1505,13 @@ AddEventHandler('cnr:showRobberMenu', function()
     SetNuiFocus(true, true)
 end)
 
+AddEventHandler('cnr:showPoliceMenu', function()
+    SendNUIMessage({
+        action = 'showPoliceMenu'
+    })
+    SetNuiFocus(true, true)
+end)
+
 -- =====================================
 --           STORE BLIP MANAGEMENT
 -- =====================================
@@ -1909,6 +1921,7 @@ end)
 
 AddEventHandler('playerSpawned', function()
     TriggerServerEvent('cnr:playerSpawned') -- Corrected event name
+    roleSelectionShownForCurrentDeath = false
 
     -- Only show role selection if player doesn't have a role yet
     if not role or role == "" then
@@ -2056,6 +2069,35 @@ AddEventHandler('cnr:roleSelected', function(success, message)
 
     if message and message ~= "" then
         ShowNotification(success and ("~g~" .. message) or ("~r~" .. message))
+    end
+end)
+
+AddEventHandler('cnr:lookupRobberInfoResult', function(requestId, result)
+    local callback = pendingPoliceLookupCallbacks[requestId]
+    if callback then
+        pendingPoliceLookupCallbacks[requestId] = nil
+        callback(result or {
+            success = false,
+            error = "Lookup failed."
+        })
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        local playerPed = PlayerPedId()
+        local isDead = playerPed ~= 0 and IsEntityDead(playerPed)
+
+        if isDead and not roleSelectionShownForCurrentDeath then
+            roleSelectionShownForCurrentDeath = true
+            TriggerEvent('cnr:closeInventory')
+            CloseBankingInterface()
+            TriggerServerEvent('cnr:requestRoleSelection')
+        elseif not isDead and roleSelectionShownForCurrentDeath then
+            roleSelectionShownForCurrentDeath = false
+        end
+
+        Citizen.Wait(isDead and 750 or 250)
     end
 end)
 
@@ -3477,6 +3519,9 @@ end)
 local bankingData = {
     balance = 0,
     transactionHistory = {},
+    activeLoan = nil,
+    activeInvestments = {},
+    investmentOptions = {},
     currentATM = nil,
     currentBankTeller = nil,
     isUsingATM = false,
@@ -3510,6 +3555,27 @@ AddEventHandler('cnr:updateTransactionHistory', function(history)
         action = "updateTransactionHistory",
         resourceName = GetCurrentResourceName(),
         history = history
+    })
+end)
+
+AddEventHandler('cnr:updateBankingDetails', function(payload)
+    local details = payload and payload.details or payload or {}
+    bankingData.balance = tonumber(details.balance) or bankingData.balance or 0
+    bankingData.transactionHistory = details.transactions or bankingData.transactionHistory or {}
+    bankingData.activeLoan = details.loan or nil
+    bankingData.activeInvestments = details.investments or {}
+    bankingData.investmentOptions = details.investmentOptions or bankingData.investmentOptions or {}
+
+    SendNUIMessage({
+        action = "updateBankingDetails",
+        resourceName = GetCurrentResourceName(),
+        details = {
+            balance = bankingData.balance,
+            transactions = bankingData.transactionHistory,
+            loan = bankingData.activeLoan,
+            investments = bankingData.activeInvestments,
+            investmentOptions = bankingData.investmentOptions
+        }
     })
 end)
 
@@ -3615,14 +3681,24 @@ end)
 
 -- Initialize ATM props on resource start
 function InitializeBankingProps()
-    -- Create ATM props
+    for _, atm in pairs(atmProps) do
+        if atm.prop and DoesEntityExist(atm.prop) then
+            DeleteEntity(atm.prop)
+        end
+    end
+
+    for _, teller in pairs(bankTellerPeds) do
+        if teller.ped and DoesEntityExist(teller.ped) then
+            DeleteEntity(teller.ped)
+        end
+    end
+
+    atmProps = {}
+    bankTellerPeds = {}
+
+    -- Track ATM interaction points without spawning duplicate props over the map
     for i, atm in pairs(Config.ATMLocations) do
-        local prop = CreateObject(GetHashKey(atm.model), atm.pos.x, atm.pos.y, atm.pos.z, false, false, false)
-        SetEntityHeading(prop, atm.heading)
-        FreezeEntityPosition(prop, true)
-        
         atmProps[i] = {
-            prop = prop,
             coords = atm.pos,
             id = i
         }
@@ -3636,12 +3712,16 @@ function InitializeBankingProps()
             while not HasModelLoaded(GetHashKey(teller.model)) do
                 Citizen.Wait(100)
             end
-            
-            local ped = CreatePed(4, GetHashKey(teller.model), tellerCoords.x, tellerCoords.y, tellerCoords.z, GetEntryHeading(teller), false, true)
+
+            local foundGround, groundZ = GetGroundZFor_3dCoord(tellerCoords.x, tellerCoords.y, tellerCoords.z + 1.0, false)
+            local pedZ = foundGround and groundZ or (tellerCoords.z - 1.0)
+            local ped = CreatePed(4, GetHashKey(teller.model), tellerCoords.x, tellerCoords.y, pedZ, GetEntryHeading(teller), false, true)
             SetEntityCanBeDamaged(ped, false)
             SetPedCanRagdollFromPlayerImpact(ped, false)
             SetBlockingOfNonTemporaryEvents(ped, true)
             SetEntityInvincible(ped, true)
+            SetEntityAsMissionEntity(ped, true, true)
+            SetEntityHeading(ped, GetEntryHeading(teller))
             FreezeEntityPosition(ped, true)
             
             bankTellerPeds[i] = {
@@ -3669,7 +3749,7 @@ Citizen.CreateThread(function()
         
         -- Check ATM proximity
         for i, atm in pairs(atmProps) do
-            if atm.prop and DoesEntityExist(atm.prop) then
+            if atm.coords then
                 local dist = #(playerCoords - atm.coords)
                 if dist < 2.0 and dist < closestATMDist then
                     closestATM = atm
@@ -3707,7 +3787,7 @@ Citizen.CreateThread(function()
             if not bankingData.isAtBank then
                 ShowHelpText("Press ~INPUT_CONTEXT~ to speak with " .. closestBankTeller.name)
                 
-                if IsControlJustReleased(0, 38) then -- E key
+                if IsControlJustPressed(0, 38) then -- E key
                     OpenBankInterface(closestBankTeller)
                 end
             end
@@ -3726,8 +3806,7 @@ function OpenATMInterface(atm)
     bankingData.isUsingATM = true
     bankingData.currentATM = atm
     
-    -- Request current balance
-    TriggerServerEvent('cnr:getBankBalance')
+    TriggerServerEvent('cnr:getBankingDetails')
     
     -- Open ATM UI
     SendNUIMessage({
@@ -3747,9 +3826,7 @@ function OpenBankInterface(teller)
     bankingData.isAtBank = true
     bankingData.currentBankTeller = teller
     
-    -- Request current balance and transaction history
-    TriggerServerEvent('cnr:getBankBalance')
-    TriggerServerEvent('cnr:getTransactionHistory')
+    TriggerServerEvent('cnr:getBankingDetails')
     
     -- Open bank UI
     SendNUIMessage({
@@ -3759,7 +3836,10 @@ function OpenBankInterface(teller)
             tellerName = teller.name,
             services = teller.services,
             balance = bankingData.balance,
-            transactions = bankingData.transactionHistory
+            transactions = bankingData.transactionHistory,
+            loan = bankingData.activeLoan,
+            investments = bankingData.activeInvestments,
+            investmentOptions = bankingData.investmentOptions
         }
     })
     
@@ -4014,9 +4094,9 @@ end)
 
 -- Helper function to show help text
 function ShowHelpText(text)
-    SetTextComponentFormat("STRING")
-    AddTextComponentString(text)
-    DisplayHelpTextFromStringLabel(0, 0, 1, -1)
+    BeginTextCommandDisplayHelp("STRING")
+    AddTextComponentSubstringPlayerName(text)
+    EndTextCommandDisplayHelp(0, false, false, -1)
 end
 
 -- Initialize banking system when resource starts
@@ -4348,6 +4428,223 @@ RegisterNUICallback('closeInventory', function(data, cb)
     cb({
         success = true
     })
+end)
+
+local function SpawnRequestedRoleVehicle(requestedRole)
+    local normalizedRole = requestedRole == "civilian" and "citizen" or (requestedRole or role or playerData.role or "citizen")
+    local modelName = nil
+    local platePrefix = "CNR"
+
+    if normalizedRole == "cop" then
+        modelName = (Config.PoliceVehicles and Config.PoliceVehicles[1]) or "police"
+        platePrefix = "PD"
+    elseif normalizedRole == "robber" then
+        modelName = (Config.RobberVehicleSpawns and Config.RobberVehicleSpawns[1] and Config.RobberVehicleSpawns[1].model)
+            or (Config.CivilianVehicles and Config.CivilianVehicles[1])
+            or "sultan"
+        platePrefix = "RB"
+    else
+        modelName = (Config.CivilianVehicles and Config.CivilianVehicles[1]) or "blista"
+        platePrefix = "CV"
+    end
+
+    local playerPed = PlayerPedId()
+    local spawnCoords = GetOffsetFromEntityInWorldCoords(playerPed, 0.0, 6.0, 0.0)
+    local spawnHeading = GetEntityHeading(playerPed)
+    local vehicleSpawn = {
+        location = vector4(spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnHeading),
+        model = modelName
+    }
+
+    return CreatePersistentRoleVehicle(vehicleSpawn, modelName, platePrefix)
+end
+
+local function ApplyInventoryUseEffect(itemId)
+    local playerPed = PlayerPedId()
+
+    if itemId == "armor" then
+        SetPedArmour(playerPed, 100)
+        return { success = true, consumed = true }
+    end
+
+    if itemId == "heavy_armor" then
+        SetPedArmour(playerPed, 100)
+        SetEntityHealth(playerPed, math.min(GetEntityMaxHealth(playerPed), GetEntityHealth(playerPed) + 25))
+        return { success = true, consumed = true }
+    end
+
+    if itemId == "medkit" then
+        SetEntityHealth(playerPed, GetEntityMaxHealth(playerPed))
+        return { success = true, consumed = true }
+    end
+
+    if itemId == "firstaidkit" then
+        SetEntityHealth(playerPed, math.min(GetEntityMaxHealth(playerPed), GetEntityHealth(playerPed) + 50))
+        return { success = true, consumed = true }
+    end
+
+    if itemId == "spikestrip_item" then
+        RequestModel(spikeStripModelHash)
+        while not HasModelLoaded(spikeStripModelHash) do
+            Citizen.Wait(50)
+        end
+
+        local deployCoords = GetOffsetFromEntityInWorldCoords(playerPed, 0.0, 3.5, -1.0)
+        local spikeStrip = CreateObject(spikeStripModelHash, deployCoords.x, deployCoords.y, deployCoords.z, true, true, false)
+        if spikeStrip and DoesEntityExist(spikeStrip) then
+            SetEntityHeading(spikeStrip, GetEntityHeading(playerPed))
+            FreezeEntityPosition(spikeStrip, true)
+            PlaceObjectOnGroundProperly(spikeStrip)
+            table.insert(currentSpikeStrips, spikeStrip)
+
+            SetTimeout(Config.SpikeStripDuration or 120000, function()
+                if DoesEntityExist(spikeStrip) then
+                    DeleteEntity(spikeStrip)
+                end
+            end)
+
+            return { success = true, consumed = true }
+        end
+
+        return { success = false, error = "Unable to deploy spike strip." }
+    end
+
+    return { success = false, error = "This item cannot be used directly." }
+end
+
+RegisterNUICallback('equipInventoryItem', function(data, cb)
+    local itemId = tostring(data and data.itemId or "")
+    local equip = not (data and data.equip == false)
+    local itemData = localPlayerInventory[itemId]
+
+    if itemId == "" or not itemData then
+        cb({ success = false, error = "Item not found." })
+        return
+    end
+
+    local playerPed = PlayerPedId()
+    local isWeaponItem = itemData.category == "Weapons"
+        or itemData.category == "Melee Weapons"
+        or (itemData.category == "Utility" and string.find(itemId, "weapon_") ~= nil)
+
+    if itemData.category == "Armor" then
+        if equip then
+            SetPedArmour(playerPed, 100)
+            localPlayerEquippedItems[itemId] = true
+        else
+            SetPedArmour(playerPed, 0)
+            localPlayerEquippedItems[itemId] = false
+        end
+
+        cb({ success = true })
+        return
+    end
+
+    if isWeaponItem then
+        local weaponHash = GetHashKey(itemId)
+        local ammoCount = (Config.DefaultWeaponAmmo and Config.DefaultWeaponAmmo[itemId]) or 250
+
+        if equip then
+            GiveWeaponToPed(playerPed, weaponHash, ammoCount, false, true)
+            SetPedAmmo(playerPed, weaponHash, ammoCount)
+            localPlayerEquippedItems[itemId] = true
+        else
+            RemoveWeaponFromPed(playerPed, weaponHash)
+            localPlayerEquippedItems[itemId] = false
+        end
+
+        cb({ success = true })
+        return
+    end
+
+    localPlayerEquippedItems[itemId] = equip
+    cb({ success = true })
+end)
+
+RegisterNUICallback('useInventoryItem', function(data, cb)
+    local itemId = tostring(data and data.itemId or "")
+    local itemData = localPlayerInventory[itemId]
+
+    if itemId == "" or not itemData then
+        cb({ success = false, error = "Item not found." })
+        return
+    end
+
+    local result = ApplyInventoryUseEffect(itemId)
+    if not result.success then
+        cb(result)
+        return
+    end
+
+    if result.consumed then
+        TriggerServerEvent('cnr:useInventoryItem', itemId)
+    end
+
+    cb({
+        success = true,
+        consumed = result.consumed == true
+    })
+end)
+
+RegisterNUICallback('dropInventoryItem', function(data, cb)
+    local itemId = tostring(data and data.itemId or "")
+    local quantity = math.max(1, tonumber(data and data.quantity) or 1)
+
+    if itemId == "" or not localPlayerInventory[itemId] then
+        cb({ success = false, error = "Item not found." })
+        return
+    end
+
+    if localPlayerEquippedItems[itemId] then
+        local weaponHash = GetHashKey(itemId)
+        if weaponHash ~= 0 then
+            RemoveWeaponFromPed(PlayerPedId(), weaponHash)
+        end
+        localPlayerEquippedItems[itemId] = false
+    end
+
+    TriggerServerEvent('cnr:dropInventoryItem', itemId, quantity)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('callRoleVehicle', function(data, cb)
+    local vehicle = SpawnRequestedRoleVehicle(data and data.role)
+    if vehicle and DoesEntityExist(vehicle) then
+        cb({ success = true })
+    else
+        cb({ success = false, error = "Unable to spawn a vehicle nearby." })
+    end
+end)
+
+RegisterNUICallback('requestPoliceAssistance', function(data, cb)
+    TriggerServerEvent('cnr:requestPoliceAssistance')
+    cb({ success = true })
+end)
+
+RegisterNUICallback('lookupRobberInfo', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    if not targetId or targetId <= 0 then
+        cb({ success = false, error = "Enter a valid player ID." })
+        return
+    end
+
+    local requestId = ("lookup_%s_%s"):format(GetGameTimer(), math.random(1000, 9999))
+    pendingPoliceLookupCallbacks[requestId] = cb
+    TriggerServerEvent('cnr:lookupRobberInfo', targetId, requestId)
+end)
+
+RegisterNUICallback('getRobberStatus', function(data, cb)
+    cb({
+        success = true,
+        wantedLevel = currentWantedPointsClient or 0,
+        wantedStars = currentWantedStarsClient or 0,
+        isWanted = (currentWantedStarsClient or 0) > 0
+    })
+end)
+
+RegisterNUICallback('findHideout', function(data, cb)
+    TriggerEvent('cnr:findHideout')
+    cb({ success = true })
 end)
 
 -- Initialize consolidated client systems

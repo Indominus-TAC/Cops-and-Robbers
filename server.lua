@@ -1857,6 +1857,7 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
     local src = source
     local pIdNum = tonumber(src)
     local pData = GetCnrPlayerData(pIdNum)
+    local normalizedRole = selectedRole == "civilian" and "citizen" or selectedRole
 
     -- Check if player data is loaded
     if not pData or not pData.isDataLoaded then
@@ -1882,32 +1883,28 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
         return
     end
 
-    -- Handle civilian role (no special spawn handling needed)
-    if selectedRole == "civilian" then
-        SetPlayerRole(pIdNum, nil) -- Clear role
-        TriggerClientEvent('cnr:roleSelected', src, true, "You are now a civilian.")
-        return
-    end
-
     -- Set role server-side
-    SetPlayerRole(pIdNum, selectedRole)
+    SetPlayerRole(pIdNum, normalizedRole)
     -- Teleport to spawn and set ped model (client will handle visuals, but send spawn info)
     local spawnLocation = nil
     local spawnHeading = 0.0
 
-    if selectedRole == "cop" and Config.SpawnPoints and Config.SpawnPoints.cop then
+    if normalizedRole == "cop" and Config.SpawnPoints and Config.SpawnPoints.cop then
         spawnLocation = Config.SpawnPoints.cop
         spawnHeading = 270.0 -- Facing west (common for Mission Row PD)
-    elseif selectedRole == "robber" and Config.SpawnPoints and Config.SpawnPoints.robber then
+    elseif normalizedRole == "robber" and Config.SpawnPoints and Config.SpawnPoints.robber then
         spawnLocation = Config.SpawnPoints.robber
         spawnHeading = 180.0 -- Facing south
+    elseif normalizedRole == "citizen" and Config.SpawnPoints and Config.SpawnPoints.citizen then
+        spawnLocation = Config.SpawnPoints.citizen
+        spawnHeading = 0.0
     end
 
     if spawnLocation then
-        TriggerClientEvent('cnr:spawnPlayerAt', src, spawnLocation, spawnHeading, selectedRole)
-        Log(string.format("Player %s spawned as %s at %s", SafeGetPlayerName(src), selectedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
+        TriggerClientEvent('cnr:spawnPlayerAt', src, spawnLocation, spawnHeading, normalizedRole)
+        Log(string.format("Player %s spawned as %s at %s", SafeGetPlayerName(src), normalizedRole, tostring(spawnLocation)), "info", "CNR_SERVER")
     else
-        Log(string.format("No spawn point found for role %s for player %s", selectedRole, src), "warn", "CNR_SERVER")
+        Log(string.format("No spawn point found for role %s for player %s", normalizedRole, src), "warn", "CNR_SERVER")
         TriggerClientEvent('cnr:roleSelected', src, false, "No spawn point configured for this role.")
         return
     end
@@ -3029,8 +3026,9 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
         TriggerClientEvent('cnr:showAdminPanel', playerId)
         Log(string.format("Admin panel opened for player %s", playerId), "info", "CNR_SERVER")
     else
-        -- Show robber menu if they're a robber, otherwise generic message
-        if pData.role == "robber" then
+        if pData.role == "cop" then
+            TriggerClientEvent('cnr:showPoliceMenu', playerId)
+        elseif pData.role == "robber" then
             TriggerClientEvent('cnr:showRobberMenu', playerId)
         else
             SafeTriggerClientEvent('cnr:showNotification', playerId, "~r~No special menu available for your role.")
@@ -3042,10 +3040,15 @@ end))
 RegisterServerEvent('cnr:requestRoleSelection')
 RegisterNetEvent('cnr:requestRoleSelection')
 AddEventHandler('cnr:requestRoleSelection', SecurityEnhancements.SecureEventHandler('cnr:requestRoleSelection', function(playerId)
-    Log(string.format("Role selection requested by player %s", playerId), "info", "CNR_SERVER")
+    local src = tonumber(source) or tonumber(playerId)
+    if not src or src <= 0 then
+        return
+    end
+
+    Log(string.format("Role selection requested by player %s", src), "info", "CNR_SERVER")
     
     -- Send role selection UI to client
-    TriggerClientEvent('cnr:showRoleSelection', playerId)
+    TriggerClientEvent('cnr:showRoleSelection', src)
 end))
 
 -- OLD CLIENT-SIDE CRIME REPORTING EVENT REMOVED
@@ -3174,6 +3177,59 @@ local function EnsureBankingPlayerData(src)
     return pData
 end
 
+local function GetInvestmentConfigById(investmentId)
+    for _, investment in ipairs(Config.Investments or {}) do
+        if investment.id == investmentId then
+            return investment
+        end
+    end
+
+    return nil
+end
+
+local function BuildBankingDetails(playerLicense)
+    local account = GetBankAccount(playerLicense)
+    local activeInvestments = {}
+    local now = os.time()
+
+    for _, investment in ipairs(playerInvestments[playerLicense] or {}) do
+        local configEntry = GetInvestmentConfigById(investment.type)
+        local endsAt = (investment.startTime or now) + (investment.duration or 0)
+
+        table.insert(activeInvestments, {
+            id = investment.type,
+            type = investment.type,
+            name = (configEntry and configEntry.name) or investment.type,
+            description = (configEntry and configEntry.description) or "",
+            amount = investment.amount or 0,
+            startTime = investment.startTime,
+            duration = investment.duration,
+            expectedReturn = investment.expectedReturn,
+            riskLevel = investment.riskLevel,
+            remainingSeconds = math.max(0, endsAt - now)
+        })
+    end
+
+    return {
+        balance = account.balance or 0,
+        transactions = account.transactionHistory or {},
+        loan = playerLoans[playerLicense],
+        investments = activeInvestments,
+        investmentOptions = Config.Investments or {}
+    }
+end
+
+local function SendBankingDetails(src)
+    local playerLicense = GetPlayerLicense(src)
+    if not playerLicense then
+        return
+    end
+
+    TriggerClientEvent('cnr:updateBankingDetails', src, {
+        details = BuildBankingDetails(playerLicense)
+    })
+end
+
 -- Bank deposit
 RegisterNetEvent('cnr:bankDeposit')
 AddEventHandler('cnr:bankDeposit', function(amount)
@@ -3228,6 +3284,7 @@ AddEventHandler('cnr:bankDeposit', function(amount)
     
     TriggerClientEvent('cnr:showNotification', src, 'Deposited $' .. amount, 'success')
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
     SaveBankingData()
 end)
 
@@ -3282,6 +3339,7 @@ AddEventHandler('cnr:bankWithdraw', function(amount)
     
     TriggerClientEvent('cnr:showNotification', src, 'Withdrew $' .. amount, 'success')
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
     SaveBankingData()
 end)
 
@@ -3335,6 +3393,8 @@ AddEventHandler('cnr:bankTransfer', function(targetId, amount)
     
     TriggerClientEvent('cnr:updateBankBalance', src, senderAccount.balance)
     TriggerClientEvent('cnr:updateBankBalance', targetId, receiverAccount.balance)
+    SendBankingDetails(src)
+    SendBankingDetails(targetId)
     SaveBankingData()
 end)
 
@@ -3393,6 +3453,7 @@ AddEventHandler('cnr:requestLoan', function(amount, duration)
     
     TriggerClientEvent('cnr:showNotification', src, 'Loan approved: $' .. amount, 'success')
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
     SaveBankingData()
 end)
 
@@ -3442,6 +3503,7 @@ AddEventHandler('cnr:repayLoan', function(amount)
     })
     
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
     SaveBankingData()
 end)
 
@@ -3507,6 +3569,7 @@ AddEventHandler('cnr:makeInvestment', function(investmentId, amount)
     
     TriggerClientEvent('cnr:showNotification', src, 'Investment made: $' .. amount, 'success')
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
     SaveBankingData()
 end)
 
@@ -3570,6 +3633,7 @@ AddEventHandler('cnr:getBankBalance', function()
     
     local account = GetBankAccount(playerLicense)
     TriggerClientEvent('cnr:updateBankBalance', src, account.balance)
+    SendBankingDetails(src)
 end)
 
 -- Get transaction history
@@ -3581,6 +3645,79 @@ AddEventHandler('cnr:getTransactionHistory', function()
     
     local account = GetBankAccount(playerLicense)
     TriggerClientEvent('cnr:updateTransactionHistory', src, account.transactionHistory)
+    SendBankingDetails(src)
+end)
+
+RegisterNetEvent('cnr:getBankingDetails')
+AddEventHandler('cnr:getBankingDetails', function()
+    local src = source
+    SendBankingDetails(src)
+end)
+
+RegisterNetEvent('cnr:requestPoliceAssistance')
+AddEventHandler('cnr:requestPoliceAssistance', function()
+    local src = tonumber(source)
+    local pData = GetCnrPlayerData(src)
+    if not pData or pData.role ~= "cop" then
+        TriggerClientEvent('cnr:showNotification', src, 'Only cops can request assistance', 'error')
+        return
+    end
+
+    local officerCoords = GetEntityCoords(GetPlayerPed(src))
+    local officerName = SafeGetPlayerName(src) or ("Officer " .. tostring(src))
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local targetId = tonumber(playerId)
+        local targetData = GetCnrPlayerData(targetId)
+        if targetData and targetData.role == "cop" then
+            TriggerClientEvent('cnr:policeAlert', targetId, {
+                type = "Officer Assistance Requested",
+                location = officerCoords,
+                suspect = officerName
+            })
+        end
+    end
+
+    TriggerClientEvent('cnr:showNotification', src, 'Assistance request sent to on-duty cops', 'success')
+end)
+
+RegisterNetEvent('cnr:lookupRobberInfo')
+AddEventHandler('cnr:lookupRobberInfo', function(targetId, requestId)
+    local src = tonumber(source)
+    local officerData = GetCnrPlayerData(src)
+    local targetPlayerId = tonumber(targetId)
+
+    if not officerData or officerData.role ~= "cop" then
+        TriggerClientEvent('cnr:lookupRobberInfoResult', src, requestId, {
+            success = false,
+            error = "Only cops can use the lookup terminal."
+        })
+        return
+    end
+
+    if not targetPlayerId or targetPlayerId <= 0 or not SafeGetPlayerName(targetPlayerId) then
+        TriggerClientEvent('cnr:lookupRobberInfoResult', src, requestId, {
+            success = false,
+            error = "Player not found."
+        })
+        return
+    end
+
+    local targetData = GetCnrPlayerData(targetPlayerId)
+    local wantedData = wantedPlayers[targetPlayerId] or { wantedLevel = 0, stars = 0 }
+    local jailData = jail[targetPlayerId]
+
+    TriggerClientEvent('cnr:lookupRobberInfoResult', src, requestId, {
+        success = true,
+        name = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId)),
+        playerId = targetPlayerId,
+        role = targetData and (targetData.role or "citizen") or "unknown",
+        wantedLevel = wantedData.wantedLevel or 0,
+        wantedStars = wantedData.stars or 0,
+        arrests = (targetData and targetData.stats and targetData.stats.arrests) or (targetData and targetData.arrests) or 0,
+        jailed = jailData ~= nil,
+        jailRemaining = jailData and jailData.remainingTime or 0
+    })
 end)
 
 -- Banking interest and loan processing (runs every hour)
@@ -4458,6 +4595,54 @@ AddEventHandler('cnr:requestMyInventory', function()
     else
         Log("No inventory found for player " .. src, "warn", "CNR_INV_SERVER")
     end
+end)
+
+RegisterNetEvent('cnr:useInventoryItem')
+AddEventHandler('cnr:useInventoryItem', function(itemId)
+    local src = tonumber(source)
+    local itemKey = tostring(itemId or "")
+    local consumableItems = {
+        armor = true,
+        heavy_armor = true,
+        medkit = true,
+        firstaidkit = true,
+        spikestrip_item = true
+    }
+
+    if itemKey == "" then
+        TriggerClientEvent('cnr:showNotification', src, 'Invalid item', 'error')
+        return
+    end
+
+    if consumableItems[itemKey] then
+        local removed = RemoveItemFromPlayerInventory(src, itemKey, 1)
+        if not removed then
+            TriggerClientEvent('cnr:showNotification', src, 'Item not available', 'error')
+            return
+        end
+    end
+
+    TriggerClientEvent('cnr:showNotification', src, 'Used ' .. itemKey, 'success')
+end)
+
+RegisterNetEvent('cnr:dropInventoryItem')
+AddEventHandler('cnr:dropInventoryItem', function(itemId, quantity)
+    local src = tonumber(source)
+    local itemKey = tostring(itemId or "")
+    local amount = math.max(1, tonumber(quantity) or 1)
+
+    if itemKey == "" then
+        TriggerClientEvent('cnr:showNotification', src, 'Invalid item', 'error')
+        return
+    end
+
+    local removed, err = RemoveItemFromPlayerInventory(src, itemKey, amount)
+    if not removed then
+        TriggerClientEvent('cnr:showNotification', src, err or 'Unable to drop item', 'error')
+        return
+    end
+
+    TriggerClientEvent('cnr:showNotification', src, 'Dropped ' .. itemKey, 'success')
 end)
 
 -- =====================================
