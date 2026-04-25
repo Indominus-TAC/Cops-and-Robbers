@@ -696,6 +696,7 @@ Config.Admins = {
     -- ["steam:110000100000001"]   = true,
     -- ["license:yourlicenseidhere"] = true,
     ["license:a423132e944ec34bdb1bfd1c545ed18b10e975c1"] = true, -- Added for testing
+    ["discord:117791089582145545"] = true,
 }
 
 
@@ -1088,7 +1089,7 @@ Config.CharacterEditor = {
 
 -- Keybind Layout Summary:
 -- M: Open Inventory | E: Interact | LEFT ALT: Police Radar | H: Fine Driver
--- G: Deploy Spikes | K: Toggle K9 | F1: EMP Device | F2: Admin Panel | F3: Character Editor
+-- G: Deploy Spikes | K: Toggle K9 | F1: EMP Device | F12: Admin Panel | F3: Character Editor
 
 -- See FiveM native docs for control list: https://docs.fivem.net/docs/game-references/controls/
 Config.Keybinds = {
@@ -1100,7 +1101,8 @@ Config.Keybinds = {
     toggleK9            = 311, -- INPUT_REPLAY_SHOWHOTKEY (K) - Correct for K key
     commandK9Attack     = 51,  -- INPUT_CONTEXT (E) - Alternative context action
     activateEMP         = 288, -- INPUT_REPLAY_START_STOP_RECORDING (F1) - Better key for EMP
-    toggleAdminPanel    = 289, -- INPUT_REPLAY_START_STOP_RECORDING_SECONDARY (F2) - Admin panel
+    toggleAdminPanel    = 289, -- Legacy control fallback. Admin panel now uses RegisterKeyMapping.
+    toggleAdminPanelKey = "F12",
     openCharacterEditor = 170, -- INPUT_REPLAY_RECORD (F3) - Character editor
     openInventory       = 244  -- INPUT_INTERACTION_MENU (M) - Standard for inventory/menus
     -- Add other keybinds as needed
@@ -1983,6 +1985,7 @@ Config.SpeedLimitMph = 60.0
 -- Keybind configurations
 Config.Keybinds = Config.Keybinds or {}
 Config.Keybinds.toggleAdminPanel = Config.Keybinds.toggleAdminPanel or 289
+Config.Keybinds.toggleAdminPanelKey = Config.Keybinds.toggleAdminPanelKey or "F12"
 Config.Keybinds.openStore = Config.Keybinds.openStore or 38
 Config.Keybinds.openCharacterEditor = Config.Keybinds.openCharacterEditor or 170
 Config.Keybinds.openInventoryKey = Config.Keybinds.openInventoryKey or "I"

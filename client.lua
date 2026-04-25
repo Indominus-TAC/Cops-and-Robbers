@@ -109,6 +109,8 @@ local xpForNextLevelDisplay = 0
 -- Contraband Drop Client State
 local activeDropBlips = {}
 local clientActiveContrabandDrops = {}
+local droppedWorldItems = {}
+local DROPPED_ITEM_MODEL = GetHashKey("prop_paper_bag_small")
 
 -- Blip tracking
 -- Performance monitoring for optimized loops
@@ -408,6 +410,7 @@ local currentCharacterSlot = 1
 local playerCharacters = {}
 local previewingUniform = false
 local currentUniformPreset = nil
+local currentEditorCameraMode = "full"
 
 -- Character editor UI state
 local editorUI = {
@@ -415,6 +418,67 @@ local editorUI = {
     currentSubCategory = "face",
     isVisible = false
 }
+
+local function DestroyCharacterEditorCamera()
+    if editorCamera and DoesCamExist(editorCamera) then
+        RenderScriptCams(false, true, 250, true, true)
+        DestroyCam(editorCamera, false)
+    end
+
+    editorCamera = nil
+end
+
+local function UpdateCharacterEditorCamera(mode)
+    if not isInCharacterEditor and not mode then
+        return
+    end
+
+    local ped = PlayerPedId()
+    if not ped or ped == 0 or not DoesEntityExist(ped) then
+        return
+    end
+
+    local cameraMode = mode or currentEditorCameraMode or "full"
+    if cameraMode ~= "face" and cameraMode ~= "body" and cameraMode ~= "full" then
+        cameraMode = "full"
+    end
+
+    currentEditorCameraMode = cameraMode
+
+    local focusCoords
+    local distance
+    local heightOffset
+
+    if cameraMode == "face" then
+        focusCoords = GetPedBoneCoords(ped, 31086, 0.0, 0.03, 0.0)
+        distance = 0.9
+        heightOffset = 0.02
+    elseif cameraMode == "body" then
+        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.95)
+        distance = 2.1
+        heightOffset = 0.1
+    else
+        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.75)
+        distance = 3.15
+        heightOffset = 0.2
+    end
+
+    local heading = GetEntityHeading(ped)
+    local headingRadians = math.rad(heading)
+    local camX = focusCoords.x - math.sin(headingRadians) * distance
+    local camY = focusCoords.y + math.cos(headingRadians) * distance
+    local camZ = focusCoords.z + heightOffset
+
+    if not editorCamera or not DoesCamExist(editorCamera) then
+        editorCamera = CreateCam("DEFAULT_SCRIPTED_CAMERA", true)
+    end
+
+    SetCamCoord(editorCamera, camX, camY, camZ)
+    PointCamAtCoord(editorCamera, focusCoords.x, focusCoords.y, focusCoords.z)
+    SetCamActive(editorCamera, true)
+    SetCamFov(editorCamera, cameraMode == "face" and 30.0 or (cameraMode == "body" and 42.0 or 52.0))
+    RenderScriptCams(true, true, 250, true, true)
+end
 
 local function GetEntryCoords(entry)
     if not entry then
@@ -749,6 +813,9 @@ function OpenCharacterEditor(role, characterSlot)
     SetEntityInvincible(ped, true)
     
     isInCharacterEditor = true
+    currentEditorCameraMode = "full"
+    DestroyCharacterEditorCamera()
+    UpdateCharacterEditorCamera(currentEditorCameraMode)
     editorUI.isVisible = true
     
     SendNUIMessage({
@@ -793,6 +860,7 @@ function CloseCharacterEditor(save)
     
     FreezeEntityPosition(ped, false)
     SetEntityInvincible(ped, false)
+    DestroyCharacterEditorCamera()
     
     SetEntityVisible(ped, true, false)
     SetEntityAlpha(ped, 255, false)
@@ -1004,6 +1072,7 @@ local currentHelpTextTarget = nil
 -- Contraband collection state
 local isCollectingFromDrop = nil
 local collectionTimerEnd = 0
+local activeDroppedItemHelpText = nil
 
 -- Store UI state
 local isCopStoreUiOpen = false
@@ -1075,6 +1144,73 @@ local function ClearStoreHelpText()
         ClearAllHelpMessages()
         activeStoreHelpText = nil
     end
+end
+
+local function ClearDroppedWorldItemHelpText()
+    activeDroppedItemHelpText = nil
+end
+
+local function GetDroppedWorldItemCoords(drop)
+    if not drop then
+        return nil
+    end
+
+    if drop.object and DoesEntityExist(drop.object) then
+        return GetEntityCoords(drop.object)
+    end
+
+    if drop.coords then
+        return vector3(drop.coords.x, drop.coords.y, drop.coords.z)
+    end
+
+    return nil
+end
+
+local function RemoveDroppedWorldItem(dropId)
+    local existing = droppedWorldItems[dropId]
+    if not existing then
+        return
+    end
+
+    if existing.object and DoesEntityExist(existing.object) then
+        SetEntityAsMissionEntity(existing.object, true, true)
+        DeleteEntity(existing.object)
+    end
+
+    droppedWorldItems[dropId] = nil
+end
+
+local function CreateDroppedWorldItem(dropData)
+    if not dropData or not dropData.id or not dropData.coords then
+        return
+    end
+
+    RemoveDroppedWorldItem(dropData.id)
+
+    RequestModel(DROPPED_ITEM_MODEL)
+    local attempts = 0
+    while not HasModelLoaded(DROPPED_ITEM_MODEL) and attempts < 50 do
+        Citizen.Wait(20)
+        attempts = attempts + 1
+    end
+
+    local coords = vector3(dropData.coords.x, dropData.coords.y, dropData.coords.z)
+    local dropObject = CreateObject(DROPPED_ITEM_MODEL, coords.x, coords.y, coords.z, false, false, false)
+
+    if dropObject and dropObject ~= 0 then
+        PlaceObjectOnGroundProperly(dropObject)
+        FreezeEntityPosition(dropObject, true)
+        SetEntityCollision(dropObject, true, true)
+    end
+
+    droppedWorldItems[dropData.id] = {
+        id = dropData.id,
+        itemId = dropData.itemId,
+        quantity = dropData.quantity or 1,
+        name = dropData.name or tostring(dropData.itemId or "Item"),
+        coords = coords,
+        object = dropObject
+    }
 end
 
 local function IsAnyStoreUiOpen()
@@ -1550,16 +1686,12 @@ end)
 --          MISSING KEYBINDS
 -- =====================================
 
--- F2 - Robber Menu / Admin Panel
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(100)
-        
-        if IsControlJustPressed(0, Config.Keybinds.toggleAdminPanel or 289) then -- F2
-            TriggerServerEvent('cnr:checkAdminStatus')
-        end
-    end
-end)
+RegisterCommand('+cnr_toggleadminpanel', function()
+    TriggerServerEvent('cnr:checkAdminStatus')
+end, false)
+
+RegisterCommand('-cnr_toggleadminpanel', function() end, false)
+RegisterKeyMapping('+cnr_toggleadminpanel', 'Open Admin Panel', 'keyboard', Config.Keybinds.toggleAdminPanelKey or 'F12')
 
 -- F5 - Role Selection Menu
 Citizen.CreateThread(function()
@@ -1573,10 +1705,11 @@ Citizen.CreateThread(function()
 end)
 
 -- Event handlers for admin status check
-AddEventHandler('cnr:showAdminPanel', function()
+AddEventHandler('cnr:showAdminPanel', function(players)
     -- Show admin panel UI
     SendNUIMessage({
-        action = 'showAdminPanel'
+        action = 'showAdminPanel',
+        players = players or {}
     })
     SetNuiFocus(true, true)
 end)
@@ -1594,6 +1727,18 @@ AddEventHandler('cnr:showPoliceMenu', function()
         action = 'showPoliceMenu'
     })
     SetNuiFocus(true, true)
+end)
+
+AddEventHandler('cnr:adminTeleportToCoords', function(coords)
+    local ped = PlayerPedId()
+    if not ped or ped == 0 or not coords then
+        return
+    end
+
+    SetEntityCoords(ped, coords.x, coords.y, coords.z, false, false, false, true)
+    if coords.heading then
+        SetEntityHeading(ped, coords.heading)
+    end
 end)
 
 -- =====================================
@@ -4019,6 +4164,7 @@ RegisterNUICallback('characterEditor_updateFeature', function(data, cb)
 end)
 
 RegisterNUICallback('characterEditor_changeCamera', function(data, cb)
+    UpdateCharacterEditorCamera(data and data.mode or "full")
     cb({ success = true })
 end)
 
@@ -4027,6 +4173,7 @@ RegisterNUICallback('characterEditor_rotateCharacter', function(data, cb)
     local currentHeading = GetEntityHeading(ped)
     local delta = (data and data.direction == 'right') and 15.0 or -15.0
     SetEntityHeading(ped, currentHeading + delta)
+    UpdateCharacterEditorCamera()
     cb({ success = true })
 end)
 
@@ -4043,6 +4190,7 @@ RegisterNUICallback('characterEditor_switchGender', function(data, cb)
     Citizen.Wait(100)
     currentCharacterData.model = modelName
     ApplyCharacterData(currentCharacterData, PlayerPedId())
+    UpdateCharacterEditorCamera()
     cb({ success = true })
 end)
 
@@ -4255,6 +4403,14 @@ end)
 AddEventHandler('cnr:inventoryUpdated', function(updatedMinimalInventory)
     Log("Received cnr:inventoryUpdated. This event might need review if cnr:syncInventory is primary.", "warn", "CNR_INV_CLIENT")
     UpdateFullInventory(updatedMinimalInventory)
+end)
+
+AddEventHandler('cnr:createDroppedWorldItem', function(dropData)
+    CreateDroppedWorldItem(dropData)
+end)
+
+AddEventHandler('cnr:removeDroppedWorldItem', function(dropId)
+    RemoveDroppedWorldItem(tonumber(dropId))
 end)
 
 AddEventHandler('cnr:receiveConfigItems', function(receivedConfigItems)
@@ -4530,6 +4686,45 @@ RegisterNUICallback('closeInventory', function(data, cb)
     })
 end)
 
+RegisterNUICallback('closeAdminPanel', function(data, cb)
+    SetNuiFocus(false, false)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('adminKickPlayer', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    if not targetId or targetId <= 0 then
+        cb({ success = false, error = "Invalid player ID." })
+        return
+    end
+
+    TriggerServerEvent('cnr:adminKickPlayer', targetId)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('adminBanPlayer', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    local reason = tostring(data and data.reason or "Banned by admin.")
+    if not targetId or targetId <= 0 then
+        cb({ success = false, error = "Invalid player ID." })
+        return
+    end
+
+    TriggerServerEvent('cnr:adminBanPlayer', targetId, reason)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('teleportToPlayerAdminUI', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    if not targetId or targetId <= 0 then
+        cb({ success = false, error = "Invalid player ID." })
+        return
+    end
+
+    TriggerServerEvent('cnr:adminTeleportToPlayer', targetId)
+    cb({ success = true })
+end)
+
 local function SpawnRequestedRoleVehicle(requestedRole)
     local normalizedRole = requestedRole == "civilian" and "citizen" or (requestedRole or role or playerData.role or "citizen")
     local modelName = nil
@@ -4705,6 +4900,18 @@ RegisterKeyMapping('+cnr_deployspikestrip', 'Deploy Spike Strip', 'keyboard', 'G
 
 Citizen.CreateThread(function()
     local recentlySpikedVehicles = {}
+    local wheelBones = {
+        "wheel_lf",
+        "wheel_rf",
+        "wheel_lm1",
+        "wheel_rm1",
+        "wheel_lm2",
+        "wheel_rm2",
+        "wheel_lm3",
+        "wheel_rm3",
+        "wheel_lr",
+        "wheel_rr"
+    }
 
     local function getVehiclesToCheck()
         if type(GetGamePool) == "function" then
@@ -4729,6 +4936,38 @@ Citizen.CreateThread(function()
         end
     end
 
+    local function getVehicleTrackingKey(vehicle)
+        if NetworkGetEntityIsNetworked(vehicle) then
+            local netId = NetworkGetNetworkIdFromEntity(vehicle)
+            if netId and netId ~= 0 then
+                return ("net:%s"):format(netId)
+            end
+        end
+
+        return ("ent:%s"):format(vehicle)
+    end
+
+    local function isWheelOnSpikeStrip(vehicle, stripCoords)
+        local nearestDistance = math.huge
+
+        for _, boneName in ipairs(wheelBones) do
+            local boneIndex = GetEntityBoneIndexByName(vehicle, boneName)
+            if boneIndex and boneIndex ~= -1 then
+                local wheelCoords = GetWorldPositionOfEntityBone(vehicle, boneIndex)
+                local dx = wheelCoords.x - stripCoords.x
+                local dy = wheelCoords.y - stripCoords.y
+                local dz = math.abs(wheelCoords.z - stripCoords.z)
+                local distance2D = math.sqrt((dx * dx) + (dy * dy))
+
+                if dz <= 0.9 and distance2D < nearestDistance then
+                    nearestDistance = distance2D
+                end
+            end
+        end
+
+        return nearestDistance <= 0.9
+    end
+
     while true do
         Citizen.Wait(150)
 
@@ -4743,14 +4982,10 @@ Citizen.CreateThread(function()
                     local stripCoords = GetEntityCoords(spikeStrip)
                     for _, vehicle in ipairs(vehicles) do
                         if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
-                            local vehicleKey = NetworkGetNetworkIdFromEntity(vehicle) or vehicle
-                            if vehicleKey == 0 then
-                                vehicleKey = vehicle
-                            end
+                            local vehicleKey = getVehicleTrackingKey(vehicle)
 
                             if (recentlySpikedVehicles[vehicleKey] or 0) < GetGameTimer() then
-                                local vehicleCoords = GetEntityCoords(vehicle)
-                                if #(vehicleCoords - stripCoords) <= 4.4 then
+                                if isWheelOnSpikeStrip(vehicle, stripCoords) then
                                     burstVehicleTyres(vehicle)
                                     recentlySpikedVehicles[vehicleKey] = GetGameTimer() + 5000
                                 end
@@ -4894,6 +5129,48 @@ end)
 RegisterNUICallback('findHideout', function(data, cb)
     TriggerEvent('cnr:findHideout')
     cb({ success = true })
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+
+        local playerPed = PlayerPedId()
+        local playerCoords = GetEntityCoords(playerPed)
+        local nearestDropId = nil
+        local nearestDistance = 2.0
+
+        for dropId, drop in pairs(droppedWorldItems) do
+            local dropCoords = GetDroppedWorldItemCoords(drop)
+            if dropCoords then
+                local distance = #(playerCoords - dropCoords)
+
+                if distance <= 20.0 then
+                    DrawMarker(20, dropCoords.x, dropCoords.y, dropCoords.z + 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.18, 0.18, 0.18, 80, 220, 120, 180, false, true, 2, false, nil, nil, false)
+                end
+
+                if distance < nearestDistance then
+                    nearestDistance = distance
+                    nearestDropId = dropId
+                end
+            end
+        end
+
+        if nearestDropId then
+            local drop = droppedWorldItems[nearestDropId]
+            local helpText = string.format("Press ~INPUT_CONTEXT~ to pick up %s", drop.name or "item")
+            DisplayHelpText(helpText)
+            activeDroppedItemHelpText = helpText
+
+            if IsControlJustPressed(0, 38) then
+                TriggerServerEvent('cnr:pickupDroppedWorldItem', nearestDropId)
+                Citizen.Wait(250)
+            end
+        else
+            ClearDroppedWorldItemHelpText()
+            Citizen.Wait(250)
+        end
+    end
 end)
 
 -- Initialize consolidated client systems

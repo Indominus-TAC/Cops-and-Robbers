@@ -42,6 +42,8 @@ local activeBounties = _G.activeBounties or {}
 local playerDeployedSpikeStripsCount = _G.playerDeployedSpikeStripsCount or {} -- For extra_spike_strips perk
 local activeSpikeStrips = {} -- To manage strip IDs and removal: {stripId = {copId = src, location = ...}}
 local nextSpikeStripId = 1
+local droppedWorldItems = {}
+local nextDroppedWorldItemId = 1
 
 _G.playersData = playersData
 _G.copsOnDuty = copsOnDuty
@@ -502,27 +504,71 @@ local function RemovePlayerMoney(playerId, amount, type)
     end
 end
 
-local function IsAdmin(playerId)
-    local src = tonumber(playerId) -- Ensure it is a number for GetPlayerIdentifiers
-    if not src then return false end
-
-    local identifiers = GetPlayerIdentifiers(tostring(src))
-    if not identifiers then return false end
-
-    if not Config or type(Config.Admins) ~= "table" then
-        Log("IsAdmin Check: Config.Admins is not loaded or not a table.", "error", "CNR_SERVER")
-        return false -- Should not happen if Config.lua is correct
+local function GetPlayerIdentifiersSafe(playerId)
+    local src = tonumber(playerId)
+    if not src then
+        return {}
     end
 
-    for _, identifier in ipairs(identifiers) do
+    local identifiers = GetPlayerIdentifiers(tostring(src))
+    if type(identifiers) ~= "table" then
+        return {}
+    end
+
+    return identifiers
+end
+
+local function HasConfigAdminIdentifier(playerId)
+    if not Config or type(Config.Admins) ~= "table" then
+        return false
+    end
+
+    for _, identifier in ipairs(GetPlayerIdentifiersSafe(playerId)) do
         if Config.Admins[identifier] then
-            Log("IsAdmin Check: Player " .. src .. " with identifier " .. identifier .. " IS an admin.", "info", "CNR_SERVER")
             return true
         end
     end
-    Log("IsAdmin Check: Player " .. src .. " is NOT an admin.", "info", "CNR_SERVER")
+
     return false
 end
+
+local function IsPlayerAdmin(playerId)
+    local src = tonumber(playerId)
+    if not src then
+        return false
+    end
+
+    if src == 0 then
+        return true
+    end
+
+    if IsPlayerAceAllowed(src, "cnr.admin") then
+        return true
+    end
+
+    if HasConfigAdminIdentifier(src) then
+        return true
+    end
+
+    local pData = GetCnrPlayerData(src)
+    if pData and (pData.isAdmin or pData.role == "admin") then
+        return true
+    end
+
+    if type(Config.AdminPlayers) == "table" then
+        for _, identifier in ipairs(GetPlayerIdentifiersSafe(src)) do
+            for _, adminId in ipairs(Config.AdminPlayers) do
+                if identifier == adminId then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local IsAdmin = IsPlayerAdmin
 
 local function GetPlayerRole(playerId)
     local pData = GetCnrPlayerData(playerId)
@@ -2267,6 +2313,54 @@ MarkPlayerForInventorySave = function(playerId)
     end
 end
 
+local function BuildAdminPlayerList()
+    local onlinePlayers = {}
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local targetId = tonumber(playerId)
+        local targetData = GetCnrPlayerData(targetId) or {}
+
+        onlinePlayers[#onlinePlayers + 1] = {
+            name = SafeGetPlayerName(targetId) or ("Player " .. tostring(targetId)),
+            serverId = targetId,
+            role = targetData.role or "citizen",
+            cash = tonumber(targetData.money) or 0
+        }
+    end
+
+    table.sort(onlinePlayers, function(a, b)
+        return (a.serverId or 0) < (b.serverId or 0)
+    end)
+
+    return onlinePlayers
+end
+
+local function ApplyBanToPlayer(targetId, reason, adminName)
+    local targetPlayerId = tonumber(targetId)
+    if not targetPlayerId or targetPlayerId <= 0 then
+        return false, "Invalid player ID."
+    end
+
+    local identifiers = GetPlayerIdentifiersSafe(targetPlayerId)
+    if #identifiers == 0 then
+        return false, "Failed to get player identifiers for ban."
+    end
+
+    local banEntry = {
+        reason = reason or "No reason provided.",
+        timestamp = os.time(),
+        admin = adminName or "Unknown"
+    }
+
+    for _, identifier in ipairs(identifiers) do
+        bannedPlayers[identifier] = banEntry
+    end
+
+    SaveBans()
+    DropPlayer(tostring(targetPlayerId), "You have been banned from this server. Reason: " .. banEntry.reason)
+    return true
+end
+
 -- Function to save player data immediately (used for critical saves)
 SavePlayerDataImmediate = function(playerId, reason)
     reason = reason or "manual"
@@ -3057,7 +3151,7 @@ AddEventHandler('cnr:issueSpeedingFine', SecurityEnhancements.SecureEventHandler
     end
 end))
 
--- Handle admin status check for F2 keybind
+-- Handle admin status check for admin panel keybind
 RegisterServerEvent('cnr:checkAdminStatus')
 RegisterNetEvent('cnr:checkAdminStatus')
 AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler('cnr:checkAdminStatus', function(playerId)
@@ -3068,32 +3162,8 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
         return
     end
     
-    -- Check if player is admin (you can customize this check based on your admin system)
-    local isAdmin = false
-    
-    -- Method 1: Check ace permissions
-    if IsPlayerAceAllowed(playerId, "cnr.admin") then
-        isAdmin = true
-    end
-    
-    -- Method 2: Check if they have admin role in player data (if you store it there)
-    if pData.isAdmin or pData.role == "admin" then
-        isAdmin = true
-    end
-    
-    -- Method 3: Check against admin list in config (if you have one)
-    if Config.AdminPlayers then
-        local identifier = GetPlayerIdentifier(playerId, 0) -- Steam ID
-        for _, adminId in ipairs(Config.AdminPlayers) do
-            if identifier == adminId then
-                isAdmin = true
-                break
-            end
-        end
-    end
-    
-    if isAdmin then
-        TriggerClientEvent('cnr:showAdminPanel', playerId)
+    if IsPlayerAdmin(playerId) then
+        TriggerClientEvent('cnr:showAdminPanel', playerId, BuildAdminPlayerList())
         Log(string.format("Admin panel opened for player %s", playerId), "info", "CNR_SERVER")
     else
         if pData.role == "cop" then
@@ -4751,7 +4821,68 @@ AddEventHandler('cnr:dropInventoryItem', function(itemId, quantity)
         return
     end
 
+    local playerPed = GetPlayerPed(src)
+    local playerCoords = playerPed and playerPed ~= 0 and GetEntityCoords(playerPed) or nil
+    local itemDetails = FindConfigItemById(itemKey)
+
+    if playerCoords then
+        local dropId = nextDroppedWorldItemId
+        nextDroppedWorldItemId = nextDroppedWorldItemId + 1
+
+        droppedWorldItems[dropId] = {
+            id = dropId,
+            itemId = itemKey,
+            quantity = amount,
+            name = (itemDetails and itemDetails.name) or itemKey,
+            coords = vector3(playerCoords.x, playerCoords.y, playerCoords.z - 0.95),
+            droppedBy = src,
+            createdAt = os.time()
+        }
+
+        TriggerClientEvent('cnr:createDroppedWorldItem', -1, droppedWorldItems[dropId])
+    end
+
     TriggerClientEvent('cnr:showNotification', src, 'Dropped ' .. itemKey, 'success')
+end)
+
+RegisterNetEvent('cnr:pickupDroppedWorldItem')
+AddEventHandler('cnr:pickupDroppedWorldItem', function(dropId)
+    local src = tonumber(source)
+    local worldItemId = tonumber(dropId)
+    local worldItem = worldItemId and droppedWorldItems[worldItemId] or nil
+
+    if not src or not worldItem then
+        return
+    end
+
+    local playerPed = GetPlayerPed(src)
+    if not playerPed or playerPed == 0 then
+        return
+    end
+
+    local playerCoords = GetEntityCoords(playerPed)
+    local itemCoords = worldItem.coords
+    local distance = #(playerCoords - itemCoords)
+
+    if distance > 3.0 then
+        TriggerClientEvent('cnr:showNotification', src, 'Move closer to pick that up.', 'error')
+        return
+    end
+
+    if not CanCarryItem(src, worldItem.itemId, worldItem.quantity) then
+        TriggerClientEvent('cnr:showNotification', src, 'Inventory full.', 'error')
+        return
+    end
+
+    local added, addErr = AddItemToPlayerInventory(src, worldItem.itemId, worldItem.quantity)
+    if not added then
+        TriggerClientEvent('cnr:showNotification', src, addErr or 'Unable to pick up item.', 'error')
+        return
+    end
+
+    droppedWorldItems[worldItemId] = nil
+    TriggerClientEvent('cnr:removeDroppedWorldItem', -1, worldItemId)
+    TriggerClientEvent('cnr:showNotification', src, 'Picked up ' .. (worldItem.name or worldItem.itemId), 'success')
 end)
 
 -- =====================================
@@ -4949,6 +5080,101 @@ local function IsValidPlayer(targetId)
     return false
 end
 
+RegisterNetEvent('cnr:adminKickPlayer')
+AddEventHandler('cnr:adminKickPlayer', function(targetId)
+    local adminId = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+
+    if not IsPlayerAdmin(adminId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Admin access required.', 'error')
+        return
+    end
+
+    if not targetPlayerId or not IsValidPlayer(targetPlayerId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Target player not found.', 'error')
+        return
+    end
+
+    if targetPlayerId == adminId then
+        TriggerClientEvent('cnr:showNotification', adminId, 'You cannot kick yourself.', 'error')
+        return
+    end
+
+    local adminName = SafeGetPlayerName(adminId) or ("Admin " .. tostring(adminId))
+    local targetName = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId))
+
+    Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) kicked %s (ID: %s)", adminName, adminId, targetName, targetPlayerId), Constants.LOG_LEVELS.INFO)
+    DropPlayer(tostring(targetPlayerId), "You have been kicked by " .. adminName .. ".")
+    TriggerClientEvent('cnr:showNotification', adminId, 'Kicked ' .. targetName, 'success')
+end)
+
+RegisterNetEvent('cnr:adminBanPlayer')
+AddEventHandler('cnr:adminBanPlayer', function(targetId, reason)
+    local adminId = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+    local banReason = tostring(reason or "Banned by admin.")
+
+    if not IsPlayerAdmin(adminId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Admin access required.', 'error')
+        return
+    end
+
+    if not targetPlayerId or not IsValidPlayer(targetPlayerId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Target player not found.', 'error')
+        return
+    end
+
+    if targetPlayerId == adminId then
+        TriggerClientEvent('cnr:showNotification', adminId, 'You cannot ban yourself.', 'error')
+        return
+    end
+
+    local adminName = SafeGetPlayerName(adminId) or ("Admin " .. tostring(adminId))
+    local targetName = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId))
+    local banned, err = ApplyBanToPlayer(targetPlayerId, banReason, adminName)
+
+    if not banned then
+        TriggerClientEvent('cnr:showNotification', adminId, err or 'Unable to ban player.', 'error')
+        return
+    end
+
+    Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) banned %s (ID: %s) - %s", adminName, adminId, targetName, targetPlayerId, banReason), Constants.LOG_LEVELS.INFO)
+    TriggerClientEvent('cnr:showNotification', adminId, 'Banned ' .. targetName, 'success')
+end)
+
+RegisterNetEvent('cnr:adminTeleportToPlayer')
+AddEventHandler('cnr:adminTeleportToPlayer', function(targetId)
+    local adminId = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+
+    if not IsPlayerAdmin(adminId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Admin access required.', 'error')
+        return
+    end
+
+    if not targetPlayerId or not IsValidPlayer(targetPlayerId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Target player not found.', 'error')
+        return
+    end
+
+    local adminPed = GetPlayerPed(adminId)
+    local targetPed = GetPlayerPed(targetPlayerId)
+    if not adminPed or adminPed == 0 or not targetPed or targetPed == 0 then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Unable to teleport right now.', 'error')
+        return
+    end
+
+    local targetCoords = GetEntityCoords(targetPed)
+    local targetHeading = GetEntityHeading(targetPed)
+    TriggerClientEvent('cnr:adminTeleportToCoords', adminId, {
+        x = targetCoords.x + 1.5,
+        y = targetCoords.y,
+        z = targetCoords.z,
+        heading = targetHeading
+    })
+    TriggerClientEvent('cnr:showNotification', adminId, 'Teleported to player ' .. tostring(targetPlayerId), 'success')
+end)
+
 -- Kick command
 RegisterCommand("kick", function(source, args, rawCommand)
     if not IsPlayerAdmin(source) then
@@ -4987,15 +5213,12 @@ RegisterCommand("ban", function(source, args, rawCommand)
     if targetId and IsValidPlayer(targetId) then
         -- Log admin command (direct server-side logging)
         Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) executed: %s", SafeGetPlayerName(source), source, rawCommand), Constants.LOG_LEVELS.INFO)
-        
-        -- Handle ban directly (since we're on server)
-        local playerIdentifiers = SafeGetPlayerIdentifiers(targetId)
-        if playerIdentifiers then
-            -- Add to ban list (assuming there's a ban management system)
-            TriggerEvent('cops_and_robbers:banPlayer', targetId, reason)
+
+        local banned, err = ApplyBanToPlayer(targetId, reason, SafeGetPlayerName(source) or ("Admin " .. tostring(source)))
+        if banned then
             TriggerClientEvent('chat:addMessage', source, { args = { "^1Admin", "Player " .. SafeGetPlayerName(targetId) .. " has been banned." } })
         else
-            TriggerClientEvent('chat:addMessage', source, { args = { "^1Admin", "Failed to get player identifiers for ban." } })
+            TriggerClientEvent('chat:addMessage', source, { args = { "^1Admin", err or "Failed to ban player." } })
         end
     else
         TriggerClientEvent('chat:addMessage', source, { args = { "^1Admin", "Invalid player ID: " .. (targetIdStr or "nil") } })

@@ -1658,8 +1658,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminPlayerListBody = document.getElementById('admin-player-list-body');
     if (adminPlayerListBody) {
         adminPlayerListBody.addEventListener('click', function(event) {
-            const target = event.target;
-            if (target.classList.contains('admin-action-btn')) {
+            const target = event.target.closest('.admin-action-btn');
+            if (target) {
                 const targetId = target.dataset.targetId;
                 if (!targetId) return;
                 const resName = CNRConfig.getResourceName();
