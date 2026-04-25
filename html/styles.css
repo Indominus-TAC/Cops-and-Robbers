@@ -3224,10 +3224,12 @@ body::before {
     background: linear-gradient(135deg, rgba(15, 15, 25, 0.98), rgba(25, 25, 40, 0.98));
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    padding: 40px;
+    padding: 32px;
     border-radius: 24px;
     width: 800px;
     max-width: 95vw;
+    max-height: min(90vh, 980px);
+    overflow-y: auto;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 
         0 25px 50px rgba(0, 0, 0, 0.8),
@@ -3235,6 +3237,8 @@ body::before {
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
     animation: fadeInMenu 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     z-index: 1000;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
 #role-selection.hidden {
@@ -3243,7 +3247,7 @@ body::before {
 
 .role-selection-header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 24px;
 }
 
 .role-selection-header h1 {
@@ -3268,7 +3272,7 @@ body::before {
 
 .role-option {
     position: relative;
-    margin-bottom: 24px;
+    margin-bottom: 18px;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -3280,7 +3284,7 @@ body::before {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px;
-    padding: 32px;
+    padding: 24px;
     position: relative;
     overflow: hidden;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -3335,7 +3339,7 @@ body::before {
 .role-header {
     display: flex;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 18px;
 }
 
 .role-icon-container {
@@ -3469,14 +3473,14 @@ body::before {
 }
 
 .role-description {
-    margin-bottom: 24px;
+    margin-bottom: 18px;
 }
 
 .role-description p {
-    margin: 0 0 16px 0;
+    margin: 0 0 12px 0;
     color: rgba(255, 255, 255, 0.8);
-    font-size: 1rem;
-    line-height: 1.6;
+    font-size: 0.98rem;
+    line-height: 1.45;
     font-weight: 400;
 }
 
@@ -3509,6 +3513,26 @@ body::before {
 .feature-tag i {
     font-size: 0.75rem;
     opacity: 0.8;
+}
+
+#role-selection::-webkit-scrollbar {
+    width: 10px;
+}
+
+#role-selection::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#role-selection::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+#role-selection::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+    background-clip: padding-box;
 }
 
 /* Legacy support for existing role buttons */

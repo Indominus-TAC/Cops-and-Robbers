@@ -2288,7 +2288,7 @@ RegisterNUICallback('selectRole', function(data, cb)
     end
     
     local selectedRole = data.role
-    if selectedRole ~= "cop" and selectedRole ~= "robber" then
+    if selectedRole ~= "cop" and selectedRole ~= "robber" and selectedRole ~= "civilian" then
         cb({ success = false, error = "Invalid role selected" })
         return
     end
@@ -2296,7 +2296,9 @@ RegisterNUICallback('selectRole', function(data, cb)
     -- Send role selection to server
     TriggerServerEvent('cnr:selectRole', selectedRole)
     
-    -- Hide the UI
+    -- Close the UI immediately so the player is not left stuck in the menu while
+    -- the server finishes role sync. Failure events will reopen it if needed.
+    SendNUIMessage({ action = 'hideRoleSelection' })
     SetNuiFocus(false, false)
     
     -- Return success to NUI
@@ -3492,16 +3494,17 @@ function SpawnPlayerAtLocation(spawnLocation, spawnHeading, role)
         return
     end
 
-    SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
-    
-    -- Set heading if provided
-    if finalHeading then
-        SetEntityHeading(playerPed, finalHeading)
-    end
-    
-    -- Apply role-specific visuals and loadout
+    -- Apply the role model/loadout before moving the ped. Changing the model after
+    -- teleporting can snap the player back to the previous location.
     if role then
         ApplyRoleVisualsAndLoadout(role)
+        playerPed = PlayerPedId()
+    end
+
+    SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
+
+    if finalHeading then
+        SetEntityHeading(playerPed, finalHeading)
     end
     
 end

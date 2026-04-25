@@ -420,6 +420,7 @@ let xpDisplayTimeout;
 let currentXP = 0;
 let currentLevel = 1;
 let currentNextLvlXP = 100;
+let roleSelectionPending = false;
 
 function updateXPDisplayElements(xp, level, nextLvlXp, xpGained = null) {
     const levelTextElement = document.getElementById('level-text');
@@ -567,8 +568,13 @@ function showToast(message, type = 'info', duration = 3000) {
 function showRoleSelection() {
     const roleSelectionUI = document.getElementById('role-selection');
     if (roleSelectionUI) {
+        roleSelectionPending = false;
+        roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+            button.disabled = false;
+        });
         roleSelectionUI.classList.remove('hidden');
         roleSelectionUI.style.display = '';
+        roleSelectionUI.style.visibility = 'visible';
         document.body.style.backgroundColor = '';
         fetchSetNuiFocus(true, true);
     }
@@ -590,6 +596,10 @@ function hideRoleSelection() {
         roleSelectionUI.classList.add('hidden');
         roleSelectionUI.style.display = 'none'; 
         roleSelectionUI.style.visibility = 'hidden'; // Explicitly set visibility
+        roleSelectionPending = false;
+        roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+            button.disabled = false;
+        });
         if (window.Config && window.Config.JSDebugLogging) {
             console.log('[CNR_NUI_ROLE] roleSelectionUI display set to none and visibility to hidden. Current display:', roleSelectionUI.style.display, 'Visibility:', roleSelectionUI.style.visibility);
         }
@@ -1435,6 +1445,18 @@ document.addEventListener('click', function(event) {
 });
 
 function selectRole(selectedRole) {
+    if (roleSelectionPending) {
+        return;
+    }
+
+    roleSelectionPending = true;
+    const roleSelectionUI = document.getElementById('role-selection');
+    if (roleSelectionUI) {
+        roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+            button.disabled = true;
+        });
+    }
+
     const resName = CNRConfig.getResourceName();
     const fetchURL = `https://${resName}/selectRole`;
     fetch(fetchURL, {
@@ -1467,15 +1489,34 @@ function selectRole(selectedRole) {
         // Directly integrate for clarity or ensure handleRoleSelection is called:
         if (response && response.success) {
             console.log('[CNR_NUI_ROLE] selectRole request accepted by Lua. Waiting for server confirmation.');
+            hideRoleSelection();
         } else if (response && response.error) {
+            roleSelectionPending = false;
+            if (roleSelectionUI) {
+                roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+                    button.disabled = false;
+                });
+            }
             console.error("[CNR_NUI_ROLE] Role selection failed via NUI callback: " + response.error);
             showToast(response.error, 'error'); // Keep toast for user feedback
         } else {
+            roleSelectionPending = false;
+            if (roleSelectionUI) {
+                roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+                    button.disabled = false;
+                });
+            }
             console.error("[CNR_NUI_ROLE] Role selection failed: Unexpected server response from NUI callback", response);
             showToast("Unexpected server response", 'error'); // Keep toast
         }
     })
     .catch(error => {
+        roleSelectionPending = false;
+        if (roleSelectionUI) {
+            roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
+                button.disabled = false;
+            });
+        }
         const resNameForError = CNRConfig.getResourceName();
         console.error(`Error in selectRole NUI callback (URL attempted: https://${resNameForError}/selectRole):`, error);
         showToast(`Failed to select role: ${error.message || 'See F8 console.'}`, 'error');
