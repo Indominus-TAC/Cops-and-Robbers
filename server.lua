@@ -586,6 +586,71 @@ local function FindConfigItemById(itemId)
     return nil
 end
 
+local roleStarterLoadouts = {
+    cop = {
+        minimumCash = Config.DefaultStartMoney or 5000,
+        items = {
+            { itemId = "weapon_stungun", count = 1 },
+            { itemId = "weapon_pistol", count = 1 },
+            { itemId = "weapon_nightstick", count = 1 },
+            { itemId = "weapon_flashlight", count = 1 },
+            { itemId = "ammo_pistol", count = 4 },
+            { itemId = "armor", count = 1 }
+        }
+    },
+    robber = {
+        minimumCash = Config.DefaultStartMoney or 5000,
+        items = {
+            { itemId = "weapon_pistol", count = 1 },
+            { itemId = "ammo_pistol", count = 2 },
+            { itemId = "armor", count = 1 },
+            { itemId = "lockpick", count = 1 }
+        }
+    }
+}
+
+local function EnsureRoleStarterState(playerId, selectedRole)
+    local pIdNum = tonumber(playerId)
+    local pData = pIdNum and playersData[pIdNum] or nil
+    local starterConfig = selectedRole and roleStarterLoadouts[selectedRole] or nil
+
+    if not pData or not starterConfig then
+        return
+    end
+
+    pData.inventory = pData.inventory or {}
+    pData.roleStarterLoadouts = pData.roleStarterLoadouts or {}
+
+    if pData.roleStarterLoadouts[selectedRole] then
+        return
+    end
+
+    if not pData.money or pData.money < starterConfig.minimumCash then
+        pData.money = starterConfig.minimumCash
+    end
+
+    for _, starterItem in ipairs(starterConfig.items) do
+        local configItem = FindConfigItemById(starterItem.itemId)
+        local existingItem = pData.inventory[starterItem.itemId]
+        local currentCount = existingItem and (existingItem.count or existingItem.quantity or 0) or 0
+
+        if currentCount < starterItem.count then
+            pData.inventory[starterItem.itemId] = {
+                count = starterItem.count,
+                name = (configItem and configItem.name) or starterItem.itemId,
+                category = (configItem and configItem.category) or "Utility",
+                itemId = starterItem.itemId
+            }
+        elseif existingItem then
+            existingItem.name = existingItem.name or ((configItem and configItem.name) or starterItem.itemId)
+            existingItem.category = existingItem.category or ((configItem and configItem.category) or "Utility")
+            existingItem.itemId = existingItem.itemId or starterItem.itemId
+        end
+    end
+
+    pData.roleStarterLoadouts[selectedRole] = true
+end
+
 LoadPlayerData = function(playerId)
     -- Log(string.format("LoadPlayerData: Called for player ID %s.", playerId), "info")
     local pIdNum = tonumber(playerId)
@@ -785,6 +850,9 @@ SetPlayerRole = function(playerId, role, skipNotify)
     end
 
     pData.role = role
+    if role == "cop" or role == "robber" then
+        EnsureRoleStarterState(pIdNum, role)
+    end
     -- player.Functions.SetMetaData("role", role) -- Example placeholder
 
     if role == "cop" then
@@ -1792,9 +1860,12 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
 
     -- Check if player data is loaded
     if not pData or not pData.isDataLoaded then
+        LoadPlayerData(pIdNum)
+        pData = GetCnrPlayerData(pIdNum)
+
         local attempts = 0
-        while attempts < 10 and (not pData or not pData.isDataLoaded) do
-            Citizen.Wait(500)
+        while attempts < 5 and (not pData or not pData.isDataLoaded) do
+            Citizen.Wait(200)
             attempts = attempts + 1
             pData = GetCnrPlayerData(pIdNum)
         end
@@ -2230,14 +2301,6 @@ AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
         end
     end
 
-    -- Send Config.Items to player after connection is established
-    Citizen.CreateThread(function()
-        Citizen.Wait(Constants.TIME_MS.SECOND * 2) -- Wait for player to fully connect
-        if Config and Config.Items then
-            TriggerClientEvent(Constants.EVENTS.SERVER_TO_CLIENT.RECEIVE_CONFIG_ITEMS, src, Config.Items)
-            Log(string.format("Sent Config.Items to connecting player %s", src), "info", "CNR_SERVER")
-        end
-    end)
 end)
 
 -- ENHANCED: Player disconnection handler with comprehensive memory management
@@ -2247,6 +2310,16 @@ AddEventHandler('playerDropped', function(reason)
     ClearPlayerNameCache(src)
 
     Log(string.format("Player %s (ID: %s) disconnected. Reason: %s", playerName, src, reason), "info", "CNR_SERVER")
+
+    if playersData[src] and SavePlayerData then
+        local saved, saveError = pcall(function()
+            SavePlayerData(src)
+        end)
+
+        if not saved then
+            Log(string.format("playerDropped: Failed to save legacy data for %s: %s", src, tostring(saveError)), "error", "CNR_SERVER")
+        end
+    end
 
     -- Use enhanced memory management system
     if MemoryManager then
@@ -2426,19 +2499,34 @@ end)
 RegisterNetEvent('cnr:playerSpawned')
 AddEventHandler('cnr:playerSpawned', function()
     local src = source
-    Log(string.format("Player %s spawned, initializing with PlayerManager", src), "info", "CNR_SERVER")
+    Log(string.format("Player %s spawned, initializing legacy runtime data", src), "info", "CNR_SERVER")
 
-    -- Use PlayerManager for proper initialization
-    PlayerManager.OnPlayerConnected(src)
+    LoadPlayerData(src)
 
-    -- Ensure data sync after a brief delay for client readiness
-    Citizen.SetTimeout(Constants.TIME_MS.SECOND * 2, function()
-        -- Validate player is still online
+    local playerLicense = GetPlayerLicense(src)
+    if playerLicense then
+        InitializeBankAccount(playerLicense)
+    end
+
+    Citizen.SetTimeout(Constants.TIME_MS.SECOND, function()
         if not SafeGetPlayerName(src) then return end
-        
-        -- Sync player data to client using PlayerManager
-        PlayerManager.SyncPlayerDataToClient(src)
-        
+
+        local pData = GetCnrPlayerData(src)
+        if not pData then
+            Log(string.format("cnr:playerSpawned: No legacy player data for %s after load.", src), "warn", "CNR_SERVER")
+            return
+        end
+
+        local pDataForSync = shallowcopy(pData)
+        pDataForSync.inventory = nil
+
+        SafeTriggerClientEvent('cnr:updatePlayerData', src, pDataForSync)
+
+        if Config and Config.Items and type(Config.Items) == "table" then
+            SafeTriggerClientEvent('cnr:receiveConfigItems', src, Config.Items)
+        end
+
+        SafeTriggerClientEvent('cnr:syncInventory', src, MinimizeInventoryForSync(pData.inventory))
         Log(string.format("Player %s initialization and sync completed", src), "info", "CNR_SERVER")
     end)
 end)
@@ -3066,12 +3154,38 @@ function ResetDailyWithdrawals()
     end
 end
 
+local function EnsureBankingPlayerData(src)
+    local pId = tonumber(src)
+    if not pId or pId <= 0 then
+        return nil
+    end
+
+    local pData = GetCnrPlayerData(pId)
+    if not pData or not pData.isDataLoaded then
+        LoadPlayerData(pId)
+        pData = GetCnrPlayerData(pId)
+    end
+
+    if pData then
+        pData.money = tonumber(pData.money) or 0
+        pData.inventory = pData.inventory or {}
+    end
+
+    return pData
+end
+
 -- Bank deposit
 RegisterNetEvent('cnr:bankDeposit')
 AddEventHandler('cnr:bankDeposit', function(amount)
     local src = source
     local playerLicense = GetPlayerLicense(src)
     if not playerLicense then return end
+
+    local pData = EnsureBankingPlayerData(src)
+    if not pData then
+        TriggerClientEvent('cnr:showNotification', src, 'Player data is still loading. Please try again.', 'error')
+        return
+    end
     
     -- SECURITY FIX: Enhanced validation for bank deposit
     if SecurityEnhancements then
@@ -3099,7 +3213,11 @@ AddEventHandler('cnr:bankDeposit', function(amount)
     local account = GetBankAccount(playerLicense)
     
     -- Remove cash and add to bank
-    RemovePlayerMoney(src, amount)
+    if not RemovePlayerMoney(src, amount) then
+        TriggerClientEvent('cnr:showNotification', src, 'Unable to remove cash for deposit', 'error')
+        return
+    end
+
     account.balance = account.balance + amount
     
     AddTransactionHistory(playerLicense, {
@@ -3119,6 +3237,12 @@ AddEventHandler('cnr:bankWithdraw', function(amount)
     local src = source
     local playerLicense = GetPlayerLicense(src)
     if not playerLicense then return end
+
+    local pData = EnsureBankingPlayerData(src)
+    if not pData then
+        TriggerClientEvent('cnr:showNotification', src, 'Player data is still loading. Please try again.', 'error')
+        return
+    end
     
     amount = tonumber(amount)
     if not amount or amount <= 0 then
@@ -3141,10 +3265,14 @@ AddEventHandler('cnr:bankWithdraw', function(amount)
         return
     end
     
+    if not AddPlayerMoney(src, amount) then
+        TriggerClientEvent('cnr:showNotification', src, 'Unable to add cash for withdrawal', 'error')
+        return
+    end
+
     -- Process withdrawal
     account.balance = account.balance - amount
     account.dailyWithdrawal = account.dailyWithdrawal + amount
-    AddPlayerMoney(src, amount)
     
     AddTransactionHistory(playerLicense, {
         type = "withdrawal",

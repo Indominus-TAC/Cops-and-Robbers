@@ -16,6 +16,7 @@ const CNRConfig = {
         console.log(`Resource name initialized: ${name}`);
     }
 };
+window.CNRConfig = CNRConfig;
 
 if (typeof GetParentResourceName === 'function') {
     const parentResourceName = GetParentResourceName();
@@ -222,31 +223,15 @@ window.addEventListener('message', function(event) {
             if (data.itemConfig) {
                 window.fullItemConfig = data.itemConfig;
                 
-                // Fix any missing item images by setting default images
+                // Keep configured images only. Missing files spam NUI logs, so use icons as the fallback.
                 for (const itemId in window.fullItemConfig) {
                     if (window.fullItemConfig.hasOwnProperty(itemId)) {
                         const item = window.fullItemConfig[itemId];
-                        
-                        // Check if image is missing or invalid
-                        if (!item.image || item.image.includes('404') || item.image === 'img/default.png') {
-                            // Set default image based on category
-                            switch (item.category) {
-                                case 'weapons':
-                                    item.image = 'img/items/weapon_pistol.png';
-                                    break;
-                                case 'ammo':
-                                    item.image = 'img/items/ammo.png';
-                                    break;
-                                case 'armor':
-                                    item.image = 'img/items/armor.png';
-                                    break;
-                                case 'tools':
-                                    item.image = 'img/items/tool.png';
-                                    break;
-                                default:
-                                    item.image = 'img/items/default.png';
-                                    break;
-                            }
+                        item.itemId = item.itemId || itemId;
+                        item.icon = item.icon || getItemIcon(item);
+
+                        if (!item.image || item.image.includes('404') || item.image === 'img/default.png' || item.image === 'img/items/default.png') {
+                            item.image = null;
                         }
                     }
                 }
@@ -280,6 +265,14 @@ window.addEventListener('message', function(event) {
             break;
         case 'showRobberMenu':
             showRobberMenu();
+            break;
+        case 'showPoliceMenu':
+            showPoliceMenu(data);
+            break;
+        case 'updateBankingDetails':
+            if (bankingSystem) {
+                bankingSystem.updateBankingDetails(data.details || {});
+            }
             break;
         // Jail Timer UI Logic
         case 'showJailTimer':
@@ -395,6 +388,16 @@ function formatJailTime(totalSeconds) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function dataNumber(...values) {
+    for (const value of values) {
+        const numberValue = Number(value);
+        if (Number.isFinite(numberValue)) {
+            return numberValue;
+        }
+    }
+    return 0;
 }
 
 // NUI Focus Helper Function (remains unchanged)
@@ -619,6 +622,12 @@ function openStoreMenu(storeName, storeItems, playerInfo) {
         storeTitleEl.textContent = storeName || 'Store';
         window.items = storeItems || [];
         
+        playerInfo = playerInfo || {
+            cash: dataNumber(window.playerInfo?.cash, window.currentPlayerInfo?.cash, previousCash, 0),
+            level: dataNumber(window.playerInfo?.level, window.currentPlayerInfo?.level, 1),
+            role: window.playerInfo?.role || window.currentPlayerInfo?.role || 'citizen'
+        };
+
         // Better handling of undefined playerInfo
         if (!playerInfo) {
             console.warn('[CNR_NUI_WARNING] No playerInfo provided to openStoreMenu, using fallback');
@@ -1120,6 +1129,42 @@ function createInventorySlot(item, type = 'buy') {
 
 // Get appropriate icon for item based on category and name
 function getItemIcon(category, itemName) {
+    if (category && typeof category === 'object') {
+        const item = category;
+        category = item.category || item.type || 'Unknown';
+        itemName = item.name || item.label || item.itemId || 'Unknown';
+    }
+
+    category = category || 'Unknown';
+    itemName = itemName || 'Unknown';
+
+    const normalizedCategory = String(category).toLowerCase();
+    const normalizedName = String(itemName).toLowerCase();
+    const itemSpecificIcons = {
+        ammo_pistol: '▣',
+        ammo_rifle: '▦',
+        ammo_shotgun: '▥',
+        ammo_sniper: '◈',
+        armor: '🛡️',
+        heavy_armor: '🛡️',
+        medkit: '✚',
+        firstaidkit: '✚',
+        speedradar_gun: '📡',
+        spikestrip_item: '⚠',
+        weapon_nightstick: '▌',
+        weapon_flashlight: '🔦',
+        weapon_stungun: '⚡',
+        weapon_stunrod: '⚡',
+        weapon_flare: '✹',
+        weapon_flaregun: '✹'
+    };
+
+    for (const [key, icon] of Object.entries(itemSpecificIcons)) {
+        if (normalizedName === key || normalizedName.includes(key.replace('weapon_', '').replace('_item', '').replace('_', ' '))) {
+            return icon;
+        }
+    }
+
     const icons = {
         'Weapons': {
             'Pistol': '🔫',
@@ -1159,12 +1204,27 @@ function getItemIcon(category, itemName) {
     // Fallback to category icons
     const categoryIcons = {
         'Weapons': '🔫',
+        'weapons': '🔫',
+        'Melee Weapons': '▌',
+        'Ammunition': '▣',
         'Equipment': '🎒',
+        'Armor': '🛡️',
+        'Cop Gear': '🚓',
+        'Police Equipment': '🚓',
         'Vehicles': '🚗',
         'Tools': '🔧',
+        'Utility': '⚙',
         'Consumables': '💊',
-        'Ammo': '📦'    };
+        'Medical': '✚',
+        'Ammo': '▣',
+        'ammo': '▣'
+    };
     
+    if (normalizedCategory.includes('ammo') || normalizedName.includes('ammo')) return '▣';
+    if (normalizedCategory.includes('armor')) return '🛡️';
+    if (normalizedCategory.includes('cop') || normalizedCategory.includes('police')) return '🚓';
+    if (normalizedCategory.includes('weapon')) return '🔫';
+
     return categoryIcons[category] || '📦';
 }
 
@@ -1202,6 +1262,7 @@ async function handleItemAction(itemId, quantity, actionType) {
         showToast(`Request to ${actionType} item failed: ${error.message || 'Check F8 console.'}`, 'error');
     }
 }
+window.handleItemAction = handleItemAction;
 
 // Cash notification system
 let previousCash = null;
@@ -1715,8 +1776,9 @@ function initInventorySystem() {
     
     // Add event listeners
     const inventoryCloseBtn = document.getElementById('inventory-close-btn');
-    if (inventoryCloseBtn) {
+    if (inventoryCloseBtn && !inventoryCloseBtn.hasEventListener) {
         inventoryCloseBtn.addEventListener('click', closeInventoryMenu);
+        inventoryCloseBtn.hasEventListener = true;
     }
     
     // Add action button listeners
@@ -1724,9 +1786,18 @@ function initInventorySystem() {
     const useBtn = document.getElementById('use-item-btn');
     const dropBtn = document.getElementById('drop-item-btn');
     
-    if (equipBtn) equipBtn.addEventListener('click', equipSelectedItem);
-    if (useBtn) useBtn.addEventListener('click', useSelectedItem);
-    if (dropBtn) dropBtn.addEventListener('click', dropSelectedItem);
+    if (equipBtn && !equipBtn.hasEventListener) {
+        equipBtn.addEventListener('click', equipSelectedItem);
+        equipBtn.hasEventListener = true;
+    }
+    if (useBtn && !useBtn.hasEventListener) {
+        useBtn.addEventListener('click', useSelectedItem);
+        useBtn.hasEventListener = true;
+    }
+    if (dropBtn && !dropBtn.hasEventListener) {
+        dropBtn.addEventListener('click', dropSelectedItem);
+        dropBtn.hasEventListener = true;
+    }
     
     console.log('[CNR_INVENTORY] Inventory system initialized');
 }
@@ -1823,10 +1894,8 @@ async function requestPlayerInventoryForUI() {
         
         const result = await response.json();
         if (result && result.success) {
-            playerInventoryData = result.inventory || {};
-            renderInventoryGrid();
-            renderEquippedItems();
-            renderCategoryFilter();
+            updateInventoryUI(result.inventory || {});
+            updateEquippedItemsUI(result.equippedItems || []);
         } else {
             console.error('[CNR_INVENTORY] Failed to get inventory:', result.error);
             showToast('Failed to load inventory', 'error', 3000);
@@ -1850,6 +1919,7 @@ function createInventoryUI() {
             closeBtn.addEventListener('click', closeInventoryUI);
             closeBtn.hasEventListener = true;
         }
+        initInventorySystem();
         
         return;
     }
@@ -1901,26 +1971,47 @@ function createInventoryUI() {
         closeBtn.addEventListener('click', closeInventoryUI);
         closeBtn.hasEventListener = true;
     }
+    initInventorySystem();
 }
 
 // Update inventory UI with new inventory data
 function updateInventoryUI(inventory) {
     console.log('[CNR_INVENTORY] Updating inventory UI', inventory);
     
-    currentInventoryData = inventory || {};
+    const normalizedInventory = {};
+    if (Array.isArray(inventory)) {
+        inventory.forEach((item, index) => {
+            if (!item) return;
+            const itemId = item.itemId || item.id || `item_${index}`;
+            normalizedInventory[itemId] = { ...item, itemId };
+        });
+    } else if (inventory && typeof inventory === 'object') {
+        Object.entries(inventory).forEach(([itemId, item]) => {
+            if (!item) return;
+            normalizedInventory[itemId] = {
+                ...item,
+                itemId: item.itemId || itemId
+            };
+        });
+    }
+
+    currentInventoryData = normalizedInventory;
+    playerInventoryData = normalizedInventory;
     
     // Update player info
     updateInventoryPlayerInfo();
     
     // Render inventory grid
     renderInventoryGrid();
+    renderCategoryFilter();
 }
 
 // Update equipped items UI
-function updateEquippedItemsUI(equippedItems) {
-    console.log('[CNR_INVENTORY] Updating equipped items UI', equippedItems);
+function updateEquippedItemsUI(equippedItemList) {
+    console.log('[CNR_INVENTORY] Updating equipped items UI', equippedItemList);
     
-    currentEquippedItems = equippedItems || {};
+    currentEquippedItems = equippedItemList || [];
+    equippedItems = new Set(Array.isArray(equippedItemList) ? equippedItemList : Object.keys(equippedItemList || {}));
     
     // Render equipped items
     renderEquippedItems();
@@ -2314,7 +2405,7 @@ function openInventoryUI(data) {
     .then(result => {
         if (result.success) {
             updateInventoryUI(result.inventory);
-            updateEquippedItemsUI(result.equippedItems);
+            updateEquippedItemsUI(result.equippedItems || []);
         }
     }).catch(error => {
         console.error('[CNR_INVENTORY] Failed to load inventory:', error);
@@ -2343,6 +2434,116 @@ function showRobberMenu() {
     }
 }
 
+let isPoliceMenuOpen = false;
+
+function showPoliceMenu(data = {}) {
+    let policeMenu = document.getElementById('police-menu');
+    if (!policeMenu) {
+        policeMenu = document.createElement('section');
+        policeMenu.id = 'police-menu';
+        policeMenu.className = 'menu role-action-menu hidden';
+        policeMenu.setAttribute('role', 'dialog');
+        policeMenu.setAttribute('aria-modal', 'true');
+        policeMenu.innerHTML = `
+            <div class="menu-header">
+                <h1>Police Menu</h1>
+                <button id="police-menu-close-btn" class="close-btn" aria-label="Close Police Menu">
+                    <span class="close-icon">x</span>
+                </button>
+            </div>
+            <div class="menu-options">
+                <button id="police-call-vehicle-btn" class="menu-btn"><span class="icon">🚓</span>Call Patrol Vehicle</button>
+                <button id="police-request-assist-btn" class="menu-btn"><span class="icon">📻</span>Request Assistance</button>
+                <button id="police-view-bounties-btn" class="menu-btn"><span class="icon">🔎</span>Wanted Players</button>
+                <div class="menu-inline-form">
+                    <input id="police-lookup-player-id" type="number" min="1" placeholder="Robber player ID">
+                    <button id="police-lookup-btn" class="menu-btn">Look Up</button>
+                </div>
+                <div id="police-lookup-result" class="menu-result"></div>
+            </div>
+        `;
+        document.body.appendChild(policeMenu);
+    }
+
+    policeMenu.classList.remove('hidden');
+    document.body.classList.add('menu-open');
+    isPoliceMenuOpen = true;
+    setupPoliceMenuListeners();
+}
+
+function hidePoliceMenu() {
+    const policeMenu = document.getElementById('police-menu');
+    if (policeMenu) {
+        policeMenu.classList.add('hidden');
+    }
+    document.body.classList.remove('menu-open');
+    isPoliceMenuOpen = false;
+    fetchSetNuiFocus(false, false);
+}
+
+function setupPoliceMenuListeners() {
+    const bindOnce = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el && !el.hasEventListener) {
+            el.addEventListener('click', handler);
+            el.hasEventListener = true;
+        }
+    };
+
+    bindOnce('police-menu-close-btn', hidePoliceMenu);
+    bindOnce('police-call-vehicle-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/callRoleVehicle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'cop' })
+        });
+        hidePoliceMenu();
+    });
+    bindOnce('police-request-assist-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/requestPoliceAssistance`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        hidePoliceMenu();
+    });
+    bindOnce('police-view-bounties-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/viewBounties`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        hidePoliceMenu();
+    });
+    bindOnce('police-lookup-btn', async () => {
+        const input = document.getElementById('police-lookup-player-id');
+        const resultEl = document.getElementById('police-lookup-result');
+        const targetId = parseInt(input?.value || '0');
+        if (!targetId) {
+            if (resultEl) resultEl.textContent = 'Enter a valid player ID.';
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://${CNRConfig.getResourceName()}/lookupRobberInfo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetId })
+            });
+            const result = await response.json();
+            if (resultEl) {
+                if (result.success) {
+                    resultEl.textContent = `${result.name || 'Player'} | Wanted: ${result.wantedLevel || 0} | Arrests: ${result.arrests || 0}`;
+                } else {
+                    resultEl.textContent = result.error || 'No record found.';
+                }
+            }
+        } catch (error) {
+            if (resultEl) resultEl.textContent = 'Lookup failed.';
+        }
+    });
+}
+
 function hideRobberMenu() {
     console.log('[CNR_ROBBER_MENU] Closing robber menu');
     
@@ -2360,15 +2561,16 @@ function hideRobberMenu() {
 function setupRobberMenuListeners() {
     // Close button
     const closeBtn = document.getElementById('robber-menu-close-btn');
-    if (closeBtn) {
+    if (closeBtn && !closeBtn.hasEventListener) {
         closeBtn.addEventListener('click', function() {
             hideRobberMenu();
         });
+        closeBtn.hasEventListener = true;
     }
     
     // Start heist button
     const startHeistBtn = document.getElementById('start-heist-btn');
-    if (startHeistBtn) {
+    if (startHeistBtn && !startHeistBtn.hasEventListener) {
         startHeistBtn.addEventListener('click', function() {
             console.log('[CNR_ROBBER_MENU] Start heist button clicked');
             fetch(`https://${CNRConfig.getResourceName()}/startHeist`, {
@@ -2378,11 +2580,12 @@ function setupRobberMenuListeners() {
             }).catch(error => console.error('[CNR_ROBBER_MENU] Error triggering heist:', error));
             hideRobberMenu();
         });
+        startHeistBtn.hasEventListener = true;
     }
     
     // View bounties button
     const viewBountiesBtn = document.getElementById('view-bounties-btn');
-    if (viewBountiesBtn) {
+    if (viewBountiesBtn && !viewBountiesBtn.hasEventListener) {
         viewBountiesBtn.addEventListener('click', function() {
             console.log('[CNR_ROBBER_MENU] View bounties button clicked');
             fetch(`https://${CNRConfig.getResourceName()}/viewBounties`, {
@@ -2392,11 +2595,12 @@ function setupRobberMenuListeners() {
             }).catch(error => console.error('[CNR_ROBBER_MENU] Error viewing bounties:', error));
             hideRobberMenu();
         });
+        viewBountiesBtn.hasEventListener = true;
     }
     
     // Find hideout button
     const findHideoutBtn = document.getElementById('find-hideout-btn');
-    if (findHideoutBtn) {
+    if (findHideoutBtn && !findHideoutBtn.hasEventListener) {
         findHideoutBtn.addEventListener('click', function() {
             console.log('[CNR_ROBBER_MENU] Find hideout button clicked');
             fetch(`https://${CNRConfig.getResourceName()}/findHideout`, {
@@ -2406,11 +2610,12 @@ function setupRobberMenuListeners() {
             }).catch(error => console.error('[CNR_ROBBER_MENU] Error finding hideout:', error));
             hideRobberMenu();
         });
+        findHideoutBtn.hasEventListener = true;
     }
     
     // Buy contraband button
     const buyContrabandBtn = document.getElementById('buy-contraband-btn');
-    if (buyContrabandBtn) {
+    if (buyContrabandBtn && !buyContrabandBtn.hasEventListener) {
         buyContrabandBtn.addEventListener('click', function() {
             console.log('[CNR_ROBBER_MENU] Buy contraband button clicked');
             fetch(`https://${CNRConfig.getResourceName()}/buyContraband`, {
@@ -2419,6 +2624,7 @@ function setupRobberMenuListeners() {
                 body: JSON.stringify({})            }).catch(error => console.error('[CNR_ROBBER_MENU] Error buying contraband:', error));
             hideRobberMenu();
         });
+        buyContrabandBtn.hasEventListener = true;
     }
 }
 
@@ -4697,6 +4903,9 @@ class BankingSystem {
     constructor() {
         this.currentBalance = 0;
         this.transactionHistory = [];
+        this.activeLoan = null;
+        this.activeInvestments = [];
+        this.investmentOptions = [];
         this.isATMOpen = false;
         this.isBankOpen = false;
         this.currentTab = 'account';
@@ -4775,15 +4984,48 @@ class BankingSystem {
         this.isBankOpen = true;
         this.currentBalance = bankData.balance || 0;
         this.transactionHistory = bankData.transactions || [];
+        this.activeLoan = bankData.loan || null;
+        this.activeInvestments = bankData.investments || [];
+        this.investmentOptions = bankData.investmentOptions || this.investmentOptions || [];
         
         document.getElementById('bank-name').textContent = bankData.tellerName || 'Bank';
         document.getElementById('bank-balance').textContent = `$${this.currentBalance.toLocaleString()}`;
         
         this.updateTransactionHistory();
         this.loadInvestmentOptions();
+        this.updateLoanStatus();
+        this.updateActiveInvestments();
         
         document.getElementById('bank-interface').classList.remove('hidden');
         console.log('[CNR_BANKING] Bank interface opened');
+    }
+
+    updateBankingDetails(details) {
+        if (!details || typeof details !== 'object') return;
+
+        if (typeof details.balance === 'number') {
+            this.updateBalance(details.balance);
+        }
+
+        if (Array.isArray(details.transactions)) {
+            this.transactionHistory = details.transactions;
+            this.updateTransactionHistory();
+        }
+
+        if (Object.prototype.hasOwnProperty.call(details, 'loan')) {
+            this.activeLoan = details.loan || null;
+            this.updateLoanStatus();
+        }
+
+        if (Array.isArray(details.investments)) {
+            this.activeInvestments = details.investments;
+            this.updateActiveInvestments();
+        }
+
+        if (Array.isArray(details.investmentOptions)) {
+            this.investmentOptions = details.investmentOptions;
+            this.loadInvestmentOptions();
+        }
     }
 
     closeBank() {
@@ -4955,27 +5197,64 @@ class BankingSystem {
 
     selectInvestment(investmentElement) {
         const investmentId = investmentElement.dataset.investmentId;
-        const amount = prompt('Enter investment amount:');
+        const minimumAmount = parseInt(investmentElement.dataset.minAmount || '1');
 
-        if (!amount || isNaN(amount) || amount <= 0) {
-            this.showNotification('Please enter a valid amount', 'error');
-            return;
-        }
+        this.showAmountDialog('Investment Amount', minimumAmount, (amount) => {
+            if (!amount || isNaN(amount) || amount <= 0) {
+                this.showNotification('Please enter a valid amount', 'error');
+                return;
+            }
 
-        fetch(`https://${CNRConfig.getResourceName()}/makeInvestment`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ investmentId, amount: parseInt(amount) })
+            fetch(`https://${CNRConfig.getResourceName()}/makeInvestment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ investmentId, amount: parseInt(amount) })
+            });
         });
     }
 
+    showAmountDialog(title, defaultAmount, onConfirm) {
+        const existingDialog = document.getElementById('banking-amount-dialog');
+        if (existingDialog) existingDialog.remove();
+
+        const host = document.querySelector('#bank-interface .banking-modal-content') || document.body;
+        const dialog = document.createElement('div');
+        dialog.id = 'banking-amount-dialog';
+        dialog.className = 'banking-amount-dialog';
+        dialog.innerHTML = `
+            <div class="amount-dialog-card">
+                <button class="amount-dialog-close" type="button">&times;</button>
+                <h3>${title}</h3>
+                <label for="banking-amount-input">Amount</label>
+                <div class="input-group">
+                    <span class="input-prefix">$</span>
+                    <input id="banking-amount-input" type="number" min="1" value="${parseInt(defaultAmount) || 1}">
+                </div>
+                <div class="form-actions">
+                    <button class="action-btn secondary amount-dialog-cancel" type="button">Cancel</button>
+                    <button class="action-btn primary amount-dialog-confirm" type="button">Confirm</button>
+                </div>
+            </div>
+        `;
+
+        const closeDialog = () => dialog.remove();
+        dialog.querySelector('.amount-dialog-close').addEventListener('click', closeDialog);
+        dialog.querySelector('.amount-dialog-cancel').addEventListener('click', closeDialog);
+        dialog.querySelector('.amount-dialog-confirm').addEventListener('click', () => {
+            const amount = parseInt(dialog.querySelector('#banking-amount-input').value);
+            closeDialog();
+            onConfirm(amount);
+        });
+
+        host.appendChild(dialog);
+        dialog.querySelector('#banking-amount-input').focus();
+    }
+
     loadInvestmentOptions() {
-        // This would be populated from server data
         const investmentGrid = document.getElementById('investment-options');
         if (!investmentGrid) return;
 
-        // Example investment options (would come from server)
-        const investments = [
+        const investments = this.investmentOptions && this.investmentOptions.length ? this.investmentOptions : [
             {
                 id: 'property_development',
                 name: 'Property Development Fund',
@@ -4988,7 +5267,7 @@ class BankingSystem {
         ];
 
         investmentGrid.innerHTML = investments.map(inv => `
-            <div class="investment-option" data-investment-id="${inv.id}">
+            <div class="investment-option" data-investment-id="${inv.id}" data-min-amount="${inv.minInvestment}">
                 <div class="investment-header">
                     <h4 class="investment-name">${inv.name}</h4>
                     <span class="risk-badge ${inv.riskLevel}">${inv.riskLevel}</span>
@@ -5003,11 +5282,81 @@ class BankingSystem {
         `).join('');
     }
 
+    updateLoanStatus() {
+        const application = document.getElementById('loan-application');
+        const activeLoan = document.getElementById('active-loan');
+        if (!application || !activeLoan) return;
+
+        if (!this.activeLoan) {
+            application.classList.remove('hidden');
+            activeLoan.classList.add('hidden');
+            return;
+        }
+
+        const principal = Number(this.activeLoan.principal || 0);
+        const owed = Number(this.activeLoan.totalOwed || principal);
+        const collateral = Number(this.activeLoan.collateral || 0);
+        const repaymentInput = document.getElementById('repayment-amount');
+
+        application.classList.add('hidden');
+        activeLoan.classList.remove('hidden');
+
+        const principalEl = document.getElementById('loan-principal');
+        const owedEl = document.getElementById('loan-owed');
+        const collateralEl = document.getElementById('loan-collateral');
+        if (principalEl) principalEl.textContent = `Principal: $${Math.floor(principal).toLocaleString()}`;
+        if (owedEl) owedEl.textContent = `Amount Owed: $${Math.floor(owed).toLocaleString()}`;
+        if (collateralEl) collateralEl.textContent = `Collateral: $${Math.floor(collateral).toLocaleString()}`;
+        if (repaymentInput) {
+            repaymentInput.max = Math.max(0, Math.floor(owed));
+            repaymentInput.placeholder = `Up to $${Math.floor(owed).toLocaleString()}`;
+        }
+    }
+
+    updateActiveInvestments() {
+        const investmentsList = document.getElementById('investments-list');
+        if (!investmentsList) return;
+
+        if (!this.activeInvestments || this.activeInvestments.length === 0) {
+            investmentsList.innerHTML = '<div class="empty-state">No active investments.</div>';
+            return;
+        }
+
+        investmentsList.innerHTML = this.activeInvestments.map(investment => {
+            const amount = Number(investment.amount || 0);
+            const expectedReturn = Number(investment.expectedReturn || 0);
+            const remainingSeconds = Math.max(0, Number(investment.remainingSeconds || 0));
+            const remainingHours = Math.ceil(remainingSeconds / 3600);
+            const projectedValue = Math.floor(amount + (amount * expectedReturn));
+
+            return `
+                <div class="investment-item">
+                    <div class="investment-info">
+                        <div class="investment-type">${investment.name || investment.type || 'Investment'}</div>
+                        <div class="investment-description">${investment.riskLevel || 'standard'} risk | ${remainingHours}h remaining</div>
+                    </div>
+                    <div class="investment-amount">
+                        $${amount.toLocaleString()} -> $${projectedValue.toLocaleString()}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     updateTransactionHistory() {
         const transactionList = document.getElementById('transaction-list');
         if (!transactionList) return;
 
-        transactionList.innerHTML = this.transactionHistory.map(transaction => {
+        const sortedTransactions = [...(this.transactionHistory || [])].sort((a, b) => {
+            return Number(b.timestamp || 0) - Number(a.timestamp || 0);
+        });
+
+        if (sortedTransactions.length === 0) {
+            transactionList.innerHTML = '<div class="empty-state">No transactions yet.</div>';
+            return;
+        }
+
+        transactionList.innerHTML = sortedTransactions.map(transaction => {
             const isPositive = ['deposit', 'transfer_in', 'loan', 'investment_return', 'interest'].includes(transaction.type);
             const amountClass = isPositive ? 'positive' : 'negative';
             const amountPrefix = isPositive ? '+' : '-';

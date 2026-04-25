@@ -94,6 +94,7 @@ local playerData = {
     armorModifier = 1.0,
     money = 0
 }
+local isJailed = false
 
 -- Wanted System Client State (Server-side managed)
 local currentWantedStarsClient = 0
@@ -130,6 +131,7 @@ local g_spawnedNPCs = {}
 -- Track spawned vehicles to prevent duplicates
 local g_spawnedVehicles = {}
 local g_robberVehiclesSpawned = false
+local g_policeVehiclesSpawned = false
 
 -- =====================================
 --     INVENTORY SYSTEM (CONSOLIDATED)
@@ -231,6 +233,39 @@ function UpdateFullInventory(minimalInventoryData)
 end
 
 -- Equipment function for inventory weapons
+local failedWeaponEquipWarnings = {}
+
+local function GiveRoleWeapon(playerPed, weaponName, ammoCount, equipNow)
+    local weaponHash = GetHashKey(weaponName)
+    if weaponHash == 0 or weaponHash == -1 then
+        return false
+    end
+
+    GiveWeaponToPed(playerPed, weaponHash, ammoCount or 0, false, equipNow == true)
+    SetPedAmmo(playerPed, weaponHash, ammoCount or 0)
+    return HasPedGotWeapon(playerPed, weaponHash, false)
+end
+
+local function ApplyRoleStarterWeapons(currentRole)
+    if isJailed then
+        return
+    end
+
+    local playerPed = PlayerPedId()
+    if not (playerPed and playerPed ~= 0 and playerPed ~= -1 and DoesEntityExist(playerPed)) then
+        return
+    end
+
+    if currentRole == "cop" then
+        GiveRoleWeapon(playerPed, "WEAPON_STUNGUN", 5, true)
+        GiveRoleWeapon(playerPed, "WEAPON_NIGHTSTICK", 1, false)
+        GiveRoleWeapon(playerPed, "WEAPON_FLASHLIGHT", 1, false)
+        GiveRoleWeapon(playerPed, "WEAPON_PISTOL", Config.DefaultWeaponAmmo and Config.DefaultWeaponAmmo.weapon_pistol or 60, false)
+    elseif currentRole == "robber" then
+        GiveRoleWeapon(playerPed, "WEAPON_BAT", 1, true)
+    end
+end
+
 function EquipInventoryWeapons()
     local playerPed = PlayerPedId()
 
@@ -319,13 +354,17 @@ function EquipInventoryWeapons()
                         Log(string.format("  ✓ EQUIPPED: %s (ID: %s, Hash: %s) Ammo: %d", itemData.name or itemId, itemId, weaponHash, ammoCount), "info", "CNR_INV_CLIENT")
                     else
                         localPlayerEquippedItems[itemId] = false
-                        Log(string.format("  ✗ FAILED_EQUIP: %s (ID: %s, Hash: %s)", itemData.name or itemId, itemId, weaponHash), "error", "CNR_INV_CLIENT")
+                        if not failedWeaponEquipWarnings[itemId] then
+                            failedWeaponEquipWarnings[itemId] = true
+                            Log(string.format("  ⚠ SKIPPED_UNSUPPORTED_WEAPON: %s (ID: %s, Hash: %s)", itemData.name or itemId, itemId, weaponHash), "warn", "CNR_INV_CLIENT")
+                        end
                     end
                 end
             end
         end
     end
 
+    ApplyRoleStarterWeapons(role or playerData.role)
     Log(string.format("EquipInventoryWeapons: Finished. Processed %d items. Successfully equipped %d weapons. Armor applied: %s", processedItemCount, weaponsEquipped, armorApplied and "Yes" or "No"), "info", "CNR_INV_CLIENT")
 end
 
@@ -904,7 +943,7 @@ local isCopStoreUiOpen = false
 local isRobberStoreUiOpen = false
 
 -- Jail System Client State
-local isJailed = false
+isJailed = false
 local jailTimeRemaining = 0
 local jailTimerDisplayActive = false
 local jailReleaseLocation = nil
@@ -1083,13 +1122,11 @@ local function ApplyRoleVisualsAndLoadout(newRole, oldRole)
     end
     
     if newRole == "cop" then
-        local taserHash = GetHashKey("weapon_stungun")
-        GiveWeaponToPed(playerPed, taserHash, 5, false, true)
+        ApplyRoleStarterWeapons("cop")
         playerWeapons["weapon_stungun"] = true
         playerAmmo["weapon_stungun"] = 5
     elseif newRole == "robber" then
-        local batHash = GetHashKey("weapon_bat")
-        GiveWeaponToPed(playerPed, batHash, 1, false, true)
+        ApplyRoleStarterWeapons("robber")
         playerWeapons["weapon_bat"] = true
         playerAmmo["weapon_bat"] = 1
 
@@ -1774,12 +1811,90 @@ function SpawnRobberVehicles()
     end
 end
 
+local function CreatePersistentRoleVehicle(vehicleSpawn, defaultModel, platePrefix)
+    if not vehicleSpawn or not vehicleSpawn.location then
+        return nil
+    end
+
+    local modelName = vehicleSpawn.model or defaultModel
+    local modelHash = GetHashKey(modelName)
+    RequestModel(modelHash)
+
+    local attempts = 0
+    while not HasModelLoaded(modelHash) and attempts < 100 do
+        Citizen.Wait(50)
+        attempts = attempts + 1
+    end
+
+    if not HasModelLoaded(modelHash) then
+        Log(string.format("Failed to load vehicle model %s after 100 attempts", modelName), "error", "CNR_CLIENT")
+        return nil
+    end
+
+    local spawnCoords = GetEntryCoords(vehicleSpawn)
+    if not spawnCoords then
+        SetModelAsNoLongerNeeded(modelHash)
+        return nil
+    end
+
+    local vehicle = CreateVehicle(
+        modelHash,
+        spawnCoords.x, spawnCoords.y, spawnCoords.z,
+        GetEntryHeading(vehicleSpawn),
+        true,
+        true
+    )
+
+    if vehicle and DoesEntityExist(vehicle) then
+        SetEntityAsMissionEntity(vehicle, true, true)
+        SetVehicleOnGroundProperly(vehicle)
+        SetVehicleEngineOn(vehicle, false, true, false)
+        SetVehicleDoorsLocked(vehicle, 1)
+        SetVehicleNeedsToBeHotwired(vehicle, false)
+        SetVehicleHasBeenOwnedByPlayer(vehicle, true)
+        SetVehicleNumberPlateText(vehicle, (platePrefix or "CNR") .. tostring(#g_spawnedVehicles + 1))
+
+        local networkId = NetworkGetNetworkIdFromEntity(vehicle)
+        if networkId and networkId ~= 0 then
+            SetNetworkIdCanMigrate(networkId, false)
+            SetNetworkIdExistsOnAllMachines(networkId, true)
+        end
+
+        table.insert(g_spawnedVehicles, vehicle)
+        return vehicle
+    end
+
+    Log(string.format("Failed to create vehicle %s", modelName), "error", "CNR_CLIENT")
+    SetModelAsNoLongerNeeded(modelHash)
+    return nil
+end
+
+function SpawnPoliceVehicles()
+    if g_policeVehiclesSpawned then
+        return
+    end
+
+    if not Config or not Config.PoliceVehicleSpawns then
+        Log("SpawnPoliceVehicles: Config.PoliceVehicleSpawns not found", "error", "CNR_CLIENT")
+        return
+    end
+
+    g_policeVehiclesSpawned = true
+
+    local models = Config.PoliceVehicles or { "police", "police2" }
+    for index, vehicleSpawn in ipairs(Config.PoliceVehicleSpawns) do
+        vehicleSpawn.model = vehicleSpawn.model or models[((index - 1) % #models) + 1]
+        CreatePersistentRoleVehicle(vehicleSpawn, "police", "PD")
+    end
+end
+
 -- Call this on resource start and when player spawns
 Citizen.CreateThread(function()
     Citizen.Wait(2000)
     SpawnCopStorePed()
     SpawnRobberStorePeds()
     SpawnRobberVehicles() -- Added vehicle spawning for robbers
+    SpawnPoliceVehicles()
     -- Initial blip setup based on current role
     if role == "cop" then
         UpdateCopStoreBlips()
@@ -1914,6 +2029,7 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
             Log("cnr:updatePlayerData: playerPed invalid, cannot give weapons.", "warn", "CNR_CLIENT")
         end
     end
+    ApplyRoleStarterWeapons(role)
     if not g_isPlayerPedReady and role and role ~= "citizen" then
         Citizen.CreateThread(function()
             Citizen.Wait(1500)
@@ -2443,6 +2559,13 @@ function OpenStoreMenu(storeType, storeItems, storeName)
         storeType = storeType,
         items = storeItems,
         storeName = storeName,
+        playerInfo = {
+            level = playerData.level or 1,
+            role = playerData.role or role or "citizen",
+            cash = playerData.money or playerCash or 0,
+            playerCash = playerData.money or playerCash or 0,
+            playerLevel = playerData.level or 1
+        },
         playerCash = playerData.money or playerCash or 0,  -- Use server data first, then client fallback
         playerLevel = playerData.level or 1,
         cash = playerData.money or playerCash or 0,  -- Add for backward compatibility
@@ -3131,7 +3254,8 @@ local contrabandDealerBlips = {}
 local contrabandDealerPeds = {}
 local activityBlips = {
     banks = {},
-    hideouts = {}
+    hideouts = {},
+    policeStations = {}
 }
 
 local function ClearBlipCollection(blips)
@@ -3149,10 +3273,7 @@ end
 function UpdateActivityBlips()
     ClearBlipCollection(activityBlips.banks)
     ClearBlipCollection(activityBlips.hideouts)
-
-    if role ~= "robber" then
-        return
-    end
+    ClearBlipCollection(activityBlips.policeStations)
 
     local bankLocations = (Config.BankTellers and #Config.BankTellers > 0) and Config.BankTellers or (Config.HeistLocations or {})
 
@@ -3161,14 +3282,34 @@ function UpdateActivityBlips()
         if heistCoords then
             local blip = AddBlipForCoord(heistCoords.x, heistCoords.y, heistCoords.z)
             SetBlipSprite(blip, location.blipSprite or 108)
-            SetBlipColour(blip, 2)
+            SetBlipColour(blip, location.blipColor or 2)
             SetBlipScale(blip, 0.8)
             SetBlipAsShortRange(blip, true)
             BeginTextCommandSetBlipName("STRING")
-            AddTextComponentString(location.name or "Bank")
+            AddTextComponentString(location.name or "Bank Teller")
             EndTextCommandSetBlipName(blip)
             table.insert(activityBlips.banks, blip)
         end
+    end
+
+    local policeStationCoords = Config.SpawnPoints and Config.SpawnPoints.cop
+    if policeStationCoords then
+        local stationCoords = GetEntryCoords(policeStationCoords) or policeStationCoords
+        if stationCoords and stationCoords.x and stationCoords.y and stationCoords.z then
+            local blip = AddBlipForCoord(stationCoords.x, stationCoords.y, stationCoords.z)
+            SetBlipSprite(blip, 60)
+            SetBlipColour(blip, 38)
+            SetBlipScale(blip, 0.85)
+            SetBlipAsShortRange(blip, true)
+            BeginTextCommandSetBlipName("STRING")
+            AddTextComponentString("Police Station")
+            EndTextCommandSetBlipName(blip)
+            table.insert(activityBlips.policeStations, blip)
+        end
+    end
+
+    if role ~= "robber" then
+        return
     end
 
     for _, hideout in ipairs(Config.RobberHideouts or {}) do
@@ -3187,12 +3328,25 @@ function UpdateActivityBlips()
     end
 end
 
--- Create contraband dealer blips and peds
-Citizen.CreateThread(function()
-    -- Wait for client to fully initialize
-    Citizen.Wait(5000)
-    
-    -- Create dealers
+local function ClearContrabandDealerEntities()
+    ClearBlipCollection(contrabandDealerBlips)
+
+    for _, ped in ipairs(contrabandDealerPeds) do
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+        end
+    end
+
+    for index = #contrabandDealerPeds, 1, -1 do
+        contrabandDealerPeds[index] = nil
+    end
+end
+
+local function SpawnContrabandDealerEntities()
+    if #contrabandDealerPeds > 0 or role ~= "robber" then
+        return
+    end
+
     for _, dealer in ipairs(Config.ContrabandDealers) do
         local dealerCoords = GetEntryCoords(dealer)
         if dealerCoords then
@@ -3219,7 +3373,7 @@ Citizen.CreateThread(function()
             end
             
             -- Create ped
-            local ped = CreatePed(4, pedHash, dealerCoords.x, dealerCoords.y, dealerCoords.z - 1.0, GetEntryHeading(dealer), false, true)
+            local ped = CreatePed(4, pedHash, dealerCoords.x, dealerCoords.y, dealerCoords.z, GetEntryHeading(dealer), false, true)
             FreezeEntityPosition(ped, true)
             SetEntityInvincible(ped, true)
             SetBlockingOfNonTemporaryEvents(ped, true)
@@ -3228,29 +3382,51 @@ Citizen.CreateThread(function()
             table.insert(contrabandDealerPeds, ped)
         end
     end
+end
+
+-- Create/remove contraband dealer blips and peds based on player role
+Citizen.CreateThread(function()
+    -- Wait for client to fully initialize
+    Citizen.Wait(5000)
+
+    while true do
+        if role == "robber" then
+            SpawnContrabandDealerEntities()
+        else
+            ClearContrabandDealerEntities()
+        end
+
+        Citizen.Wait(2000)
+    end
 end)
 
 -- Interaction with contraband dealers
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(100)
+        if role ~= "robber" then
+            Citizen.Wait(1000)
+        else
+            Citizen.Wait(100)
+        end
         
         local playerPed = PlayerPedId()
         local playerCoords = GetEntityCoords(playerPed)
         
-        for _, dealer in ipairs(Config.ContrabandDealers) do
-            local dealerCoords = GetEntryCoords(dealer)
-            if dealerCoords then
-                local distance = #(playerCoords - dealerCoords)
-                if distance < 3.0 then
-                    DrawSphere(dealerCoords.x, dealerCoords.y, dealerCoords.z - 0.5, 0.5, 255, 0, 0, 0.2)
-                    
-                    BeginTextCommandDisplayHelp("STRING")
-                    AddTextComponentSubstringPlayerName("Press ~INPUT_CONTEXT~ to access the contraband dealer")
-                    EndTextCommandDisplayHelp(0, false, true, -1)
-                    
-                    if IsControlJustReleased(0, 38) then -- E key
-                        TriggerServerEvent('cnr:accessContrabandDealer')
+        if role == "robber" then
+            for _, dealer in ipairs(Config.ContrabandDealers) do
+                local dealerCoords = GetEntryCoords(dealer)
+                if dealerCoords then
+                    local distance = #(playerCoords - dealerCoords)
+                    if distance < 3.0 then
+                        DrawSphere(dealerCoords.x, dealerCoords.y, dealerCoords.z - 0.5, 0.5, 255, 0, 0, 0.2)
+                        
+                        BeginTextCommandDisplayHelp("STRING")
+                        AddTextComponentSubstringPlayerName("Press ~INPUT_CONTEXT~ to access the contraband dealer")
+                        EndTextCommandDisplayHelp(0, false, true, -1)
+                        
+                        if IsControlJustReleased(0, 38) then -- E key
+                            TriggerServerEvent('cnr:accessContrabandDealer')
+                        end
                     end
                 end
             end
@@ -3461,7 +3637,7 @@ function InitializeBankingProps()
                 Citizen.Wait(100)
             end
             
-            local ped = CreatePed(4, GetHashKey(teller.model), tellerCoords.x, tellerCoords.y, tellerCoords.z - 1.0, GetEntryHeading(teller), false, true)
+            local ped = CreatePed(4, GetHashKey(teller.model), tellerCoords.x, tellerCoords.y, tellerCoords.z, GetEntryHeading(teller), false, true)
             SetEntityCanBeDamaged(ped, false)
             SetPedCanRagdollFromPlayerImpact(ped, false)
             SetBlockingOfNonTemporaryEvents(ped, true)
@@ -3531,7 +3707,7 @@ Citizen.CreateThread(function()
             if not bankingData.isAtBank then
                 ShowHelpText("Press ~INPUT_CONTEXT~ to speak with " .. closestBankTeller.name)
                 
-                if IsControlJustPressed(0, 38) then -- E key
+                if IsControlJustReleased(0, 38) then -- E key
                     OpenBankInterface(closestBankTeller)
                 end
             end

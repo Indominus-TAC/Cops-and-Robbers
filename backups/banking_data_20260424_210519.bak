@@ -1,0 +1,36 @@
+{
+    "loans": [],
+    "accounts": {
+        "license:a423132e944ec34bdb1bfd1c545ed18b10e975c1": {
+            "accountNumber": 943612670,
+            "transactionHistory": [
+                {
+                    "type": "withdrawal",
+                    "balance": 3500,
+                    "amount": 1500,
+                    "timestamp": 1777062848,
+                    "description": "ATM withdrawal"
+                },
+                {
+                    "type": "withdrawal",
+                    "balance": 3400,
+                    "amount": 100,
+                    "timestamp": 1777071920,
+                    "description": "ATM withdrawal"
+                },
+                {
+                    "type": "withdrawal",
+                    "balance": 3300,
+                    "amount": 100,
+                    "timestamp": 1777071934,
+                    "description": "ATM withdrawal"
+                }
+            ],
+            "dailyWithdrawal": 1700,
+            "balance": 3300,
+            "openDate": 1751506034,
+            "lastWithdrawalReset": "2026-04-24"
+        }
+    },
+    "investments": []
+}

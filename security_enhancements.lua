@@ -146,12 +146,15 @@ function Validation.ValidateMoney(amount, allowNegative)
         return false, 0, "Money amount cannot be negative"
     end
     
-    if money > Constants.VALIDATION.MAX_MONEY_AMOUNT then
-        return false, 0, string.format("Money amount too large (max: $%d)", Constants.VALIDATION.MAX_MONEY_AMOUNT)
+    local maxMoneyAmount = Constants.VALIDATION.MAX_MONEY_AMOUNT or Constants.VALIDATION.MAX_MONEY_TRANSACTION or 1000000
+    local minMoneyAmount = Constants.VALIDATION.MIN_MONEY_AMOUNT or Constants.VALIDATION.MIN_MONEY_TRANSACTION or 0
+
+    if money > maxMoneyAmount then
+        return false, 0, string.format("Money amount too large (max: $%d)", maxMoneyAmount)
     end
     
-    if money < Constants.VALIDATION.MIN_MONEY_AMOUNT then
-        return false, 0, string.format("Money amount too small (min: $%d)", Constants.VALIDATION.MIN_MONEY_AMOUNT)
+    if money < minMoneyAmount then
+        return false, 0, string.format("Money amount too small (min: $%d)", minMoneyAmount)
     end
     
     money = math.floor(money * 100) / 100

@@ -414,12 +414,25 @@ window.UIOptimizer = {
     handleItemAction(itemId, quantity, type) {
         // Optimized feedback without blocking UI
         this.showOptimizedToast(`${type === 'buy' ? 'Buying' : 'Selling'} ${quantity}x ${itemId}...`, 'info');
-        
+
+        if (typeof window.handleItemAction === 'function') {
+            window.handleItemAction(itemId, quantity, type);
+            return;
+        }
+
+        const resourceName = window.CNRConfig?.getResourceName?.() || (typeof GetParentResourceName === 'function' ? GetParentResourceName() : null);
+        if (!resourceName) {
+            this.showOptimizedToast('Store action unavailable: resource not ready', 'error');
+            return;
+        }
+
         // Send to game
-        fetch(`https://${window.CNRConfig?.getResourceName() || 'unknown-resource'}/${type}Item`, {
+        fetch(`https://${resourceName}/${type}Item`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ itemId, quantity })
+        }).catch(error => {
+            console.warn('[UI_OPTIMIZER] Store action callback failed:', error);
         });
     },
     
@@ -610,6 +623,8 @@ function runUIPerformanceTest() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(results)
+    }).catch(error => {
+        console.warn('[UI_OPTIMIZER] Failed to send UI test results:', error);
     });
     
     return results;
@@ -625,6 +640,8 @@ window.addEventListener('message', function(event) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(metrics)
+        }).catch(error => {
+            console.warn('[UI_OPTIMIZER] Failed to send UI metrics:', error);
         });
     }
 });
