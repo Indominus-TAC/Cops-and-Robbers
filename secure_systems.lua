@@ -42,6 +42,42 @@ local function LogInventory(playerId, operation, message, level)
     end
 end
 
+local function GetInventoryCount(inventoryItem)
+    if type(inventoryItem) == "table" then
+        return tonumber(inventoryItem.count or inventoryItem.quantity or 0) or 0
+    end
+
+    return tonumber(inventoryItem) or 0
+end
+
+local function SetInventoryCount(playerId, itemId, count, itemConfig)
+    if not playersData[playerId] then return end
+    playersData[playerId].inventory = playersData[playerId].inventory or {}
+
+    if count <= 0 then
+        playersData[playerId].inventory[itemId] = nil
+        return
+    end
+
+    local existing = playersData[playerId].inventory[itemId]
+    if type(existing) ~= "table" then
+        existing = {}
+    end
+
+    existing.count = count
+    existing.itemId = itemId
+    existing.name = existing.name or (itemConfig and itemConfig.name) or itemId
+    existing.category = existing.category or (itemConfig and itemConfig.category) or "Miscellaneous"
+
+    playersData[playerId].inventory[itemId] = existing
+end
+
+local function MarkInventoryChanged(playerId)
+    if DataManager and DataManager.MarkPlayerForSave then
+        DataManager.MarkPlayerForSave(playerId)
+    end
+end
+
 
 function SecureInventory.AddItem(playerId, itemId, quantity, source)
     local startTime = GetGameTimer()
@@ -71,8 +107,9 @@ function SecureInventory.AddItem(playerId, itemId, quantity, source)
         playersData[playerId].inventory = {}
     end
     
-    local currentQuantity = playersData[playerId].inventory[itemId] or 0
-    playersData[playerId].inventory[itemId] = currentQuantity + validatedQuantity
+    local currentQuantity = GetInventoryCount(playersData[playerId].inventory[itemId])
+    SetInventoryCount(playerId, itemId, currentQuantity + validatedQuantity, itemConfig)
+    MarkInventoryChanged(playerId)
     
     local operationTime = GetGameTimer() - startTime
     inventoryStats.averageOperationTime = (inventoryStats.averageOperationTime + operationTime) / 2
@@ -105,17 +142,15 @@ function SecureInventory.RemoveItem(playerId, itemId, quantity, reason)
         return false, "Player inventory not found"
     end
     
-    local currentQuantity = playersData[playerId].inventory[itemId] or 0
+    local currentQuantity = GetInventoryCount(playersData[playerId].inventory[itemId])
     if currentQuantity < validatedQuantity then
         LogInventory(playerId, "RemoveItem", string.format("Insufficient quantity: has %d, needs %d", currentQuantity, validatedQuantity), Constants.LOG_LEVELS.ERROR)
         inventoryStats.failedOperations = inventoryStats.failedOperations + 1
         return false, "Insufficient quantity"
     end
     
-    playersData[playerId].inventory[itemId] = currentQuantity - validatedQuantity
-    if playersData[playerId].inventory[itemId] <= 0 then
-        playersData[playerId].inventory[itemId] = nil
-    end
+    SetInventoryCount(playerId, itemId, currentQuantity - validatedQuantity, itemConfig)
+    MarkInventoryChanged(playerId)
     
     local operationTime = GetGameTimer() - startTime
     inventoryStats.averageOperationTime = (inventoryStats.averageOperationTime + operationTime) / 2
@@ -175,7 +210,8 @@ function SecureInventory.GetInventory(playerId)
     end
     
     local inventory = {}
-    for itemId, quantity in pairs(playersData[playerId].inventory) do
+    for itemId, itemData in pairs(playersData[playerId].inventory) do
+        local quantity = GetInventoryCount(itemData)
         if quantity > 0 then
             inventory[itemId] = quantity
         end
@@ -201,7 +237,7 @@ function SecureInventory.HasItem(playerId, itemId, quantity)
         return false
     end
     
-    local currentQuantity = playersData[playerId].inventory[itemId] or 0
+    local currentQuantity = GetInventoryCount(playersData[playerId].inventory[itemId])
     return currentQuantity >= validatedQuantity
 end
 
@@ -240,6 +276,10 @@ function SecureTransactions.ProcessPurchase(playerId, itemId, quantity)
         transactionStats.failedTransactions = transactionStats.failedTransactions + 1
         return false, error
     end
+    if validatedQuantity <= 0 then
+        transactionStats.failedTransactions = transactionStats.failedTransactions + 1
+        return false, "Quantity must be at least 1"
+    end
     
     local valid, itemConfig, error = Validation.ValidateItem(itemId)
     if not valid then
@@ -253,12 +293,13 @@ function SecureTransactions.ProcessPurchase(playerId, itemId, quantity)
         transactionStats.failedTransactions = transactionStats.failedTransactions + 1
         return false, "Player data not found"
     end
+    playersData[playerId].money = playersData[playerId].money or 0
     
-    local totalCost = (itemConfig.price or 0) * validatedQuantity
-    if playersData[playerId].money < totalCost then
-        LogTransaction(playerId, "ProcessPurchase", string.format("Insufficient funds: has $%d, needs $%d", playersData[playerId].money, totalCost), Constants.LOG_LEVELS.ERROR)
+    local purchaseValid, totalCost, purchaseError = Validation.ValidateItemPurchase(playerId, itemConfig, validatedQuantity, playersData[playerId])
+    if not purchaseValid then
+        LogTransaction(playerId, "ProcessPurchase", purchaseError or "Purchase validation failed", Constants.LOG_LEVELS.ERROR)
         transactionStats.failedTransactions = transactionStats.failedTransactions + 1
-        return false, "Insufficient funds"
+        return false, purchaseError or "Purchase validation failed"
     end
     
     local success, error = SecureInventory.AddItem(playerId, itemId, validatedQuantity, "purchase")
@@ -280,8 +321,15 @@ function SecureTransactions.ProcessPurchase(playerId, itemId, quantity)
     local operationTime = GetGameTimer() - startTime
     transactionStats.averageTransactionTime = (transactionStats.averageTransactionTime + operationTime) / 2
     
+    local newBalance = playersData[playerId].money or 0
+
     LogTransaction(playerId, "ProcessPurchase", string.format("Purchased %d x %s for $%d", validatedQuantity, itemId, totalCost))
-    return true, nil
+    return true, string.format("Purchased %d x %s for $%d", validatedQuantity, itemConfig.name or itemId, totalCost), {
+        itemId = itemId,
+        quantity = validatedQuantity,
+        totalCost = totalCost,
+        newBalance = newBalance
+    }
 end
 
 function SecureTransactions.ProcessSale(playerId, itemId, quantity)
@@ -294,6 +342,10 @@ function SecureTransactions.ProcessSale(playerId, itemId, quantity)
         transactionStats.failedTransactions = transactionStats.failedTransactions + 1
         return false, error
     end
+    if validatedQuantity <= 0 then
+        transactionStats.failedTransactions = transactionStats.failedTransactions + 1
+        return false, "Quantity must be at least 1"
+    end
     
     local valid, itemConfig, error = Validation.ValidateItem(itemId)
     if not valid then
@@ -301,6 +353,7 @@ function SecureTransactions.ProcessSale(playerId, itemId, quantity)
         transactionStats.failedTransactions = transactionStats.failedTransactions + 1
         return false, error
     end
+    playersData[playerId].money = playersData[playerId].money or 0
     
     if not SecureInventory.HasItem(playerId, itemId, validatedQuantity) then
         LogTransaction(playerId, "ProcessSale", string.format("Insufficient item quantity for sale"), Constants.LOG_LEVELS.ERROR)
@@ -315,7 +368,7 @@ function SecureTransactions.ProcessSale(playerId, itemId, quantity)
         return false, error
     end
     
-    local salePrice = math.floor(((itemConfig.price or 0) * validatedQuantity) * 0.7)
+    local salePrice = math.floor(((itemConfig.price or itemConfig.basePrice or 0) * validatedQuantity) * 0.7)
     playersData[playerId].money = playersData[playerId].money + salePrice
     
     transactionStats.successfulTransactions = transactionStats.successfulTransactions + 1
@@ -324,8 +377,15 @@ function SecureTransactions.ProcessSale(playerId, itemId, quantity)
     local operationTime = GetGameTimer() - startTime
     transactionStats.averageTransactionTime = (transactionStats.averageTransactionTime + operationTime) / 2
     
+    local newBalance = playersData[playerId].money or 0
+
     LogTransaction(playerId, "ProcessSale", string.format("Sold %d x %s for $%d", validatedQuantity, itemId, salePrice))
-    return true, salePrice
+    return true, string.format("Sold %d x %s for $%d", validatedQuantity, itemConfig.name or itemId, salePrice), {
+        itemId = itemId,
+        quantity = validatedQuantity,
+        salePrice = salePrice,
+        newBalance = newBalance
+    }
 end
 
 function SecureTransactions.AddMoney(playerId, amount, reason)

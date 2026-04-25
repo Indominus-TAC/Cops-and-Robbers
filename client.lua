@@ -415,6 +415,10 @@ local function GetEntryCoords(entry)
         return nil
     end
 
+    if type(entry) == "vector3" or type(entry) == "vector4" then
+        return vector3(entry.x, entry.y, entry.z)
+    end
+
     local location = entry.location or entry.pos or entry.coords
     if location then
         if type(location) == "vector3" or type(location) == "vector4" then
@@ -438,6 +442,10 @@ local function GetEntryHeading(entry, fallbackHeading)
         return fallbackHeading or 0.0
     end
 
+    if type(entry) == "vector4" then
+        return entry.w
+    end
+
     local location = entry.location or entry.pos or entry.coords
     if type(location) == "vector4" then
         return location.w
@@ -458,6 +466,43 @@ local function GetRoleSpawnHeading(playerRole)
     end
 
     return 0.0
+end
+
+local function TeleportPlayerToEntry(playerPed, entry, heading)
+    local targetCoords = GetEntryCoords(entry)
+    if not targetCoords then
+        return false
+    end
+
+    local targetHeading = GetEntryHeading(entry, heading or 0.0)
+
+    FreezeEntityPosition(playerPed, true)
+    RequestCollisionAtCoord(targetCoords.x, targetCoords.y, targetCoords.z)
+
+    SetEntityCoordsNoOffset(playerPed, targetCoords.x, targetCoords.y, targetCoords.z, false, false, false)
+    SetEntityHeading(playerPed, targetHeading)
+
+    local attempts = 0
+    while attempts < 30 and not HasCollisionLoadedAroundEntity(playerPed) do
+        Citizen.Wait(50)
+        RequestCollisionAtCoord(targetCoords.x, targetCoords.y, targetCoords.z)
+        attempts = attempts + 1
+    end
+
+    SetEntityCoordsNoOffset(playerPed, targetCoords.x, targetCoords.y, targetCoords.z, false, false, false)
+    SetEntityHeading(playerPed, targetHeading)
+    FreezeEntityPosition(playerPed, false)
+
+    return true
+end
+
+local function QueueInventoryReequip(delayMs)
+    Citizen.SetTimeout(delayMs or 1000, function()
+        local currentResourceName = GetCurrentResourceName()
+        if exports[currentResourceName] and exports[currentResourceName].EquipInventoryWeapons then
+            exports[currentResourceName]:EquipInventoryWeapons()
+        end
+    end)
 end
 
 -- Get default character data
@@ -946,6 +991,9 @@ local collectionTimerEnd = 0
 -- Store UI state
 local isCopStoreUiOpen = false
 local isRobberStoreUiOpen = false
+local activeStoreHelpText = nil
+local lastStoreInteractionTime = 0
+local STORE_INTERACTION_COOLDOWN_MS = 500
 
 -- Jail System Client State
 isJailed = false
@@ -993,7 +1041,27 @@ local function DisplayHelpText(text)
     end
     BeginTextCommandDisplayHelp("STRING")
     AddTextComponentSubstringPlayerName(text)
-    EndTextCommandDisplayHelp(0, false, true, -1)
+    EndTextCommandDisplayHelp(0, false, false, -1)
+end
+
+local function ShowPersistentStoreHelpText(text)
+    if activeStoreHelpText == text then
+        return
+    end
+
+    DisplayHelpText(text)
+    activeStoreHelpText = text
+end
+
+local function ClearStoreHelpText()
+    if activeStoreHelpText then
+        ClearAllHelpMessages()
+        activeStoreHelpText = nil
+    end
+end
+
+local function IsAnyStoreUiOpen()
+    return isCopStoreUiOpen or isRobberStoreUiOpen
 end
 
 -- CalculateXpForNextLevelClient function already defined in consolidated progression section
@@ -1013,8 +1081,7 @@ local function spawnPlayer(playerRole)
     if spawnCoords then
         local playerPed = PlayerPedId()
         if playerPed and playerPed ~= 0 and playerPed ~= -1 and DoesEntityExist(playerPed) then
-            SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
-            SetEntityHeading(playerPed, spawnHeading)
+            TeleportPlayerToEntry(playerPed, spawnPoint, spawnHeading)
             ShowNotification("Spawned as " .. playerRole)
         else
             Log("spawnPlayer: playerPed invalid, cannot set coords.", "warn", "CNR_CLIENT")
@@ -1633,8 +1700,6 @@ function UpdateRobberStoreBlips()
                         robberStoreBlips[blipKey] = nil
                     end
                 end
-            else
-                Log(string.format("UpdateRobberStoreBlips: Invalid vendor entry at index %d. Vendor: %s", i, vendor and vendor.name or "unknown"), "warn", "CNR_CLIENT")
             end
         end
     end
@@ -1933,11 +1998,11 @@ AddEventHandler('playerSpawned', function()
         local spawnCoords = GetEntryCoords(spawnPoint)
         if spawnCoords then
             local playerPed = PlayerPedId()
-            SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
-            SetEntityHeading(playerPed, GetEntryHeading(spawnPoint, GetRoleSpawnHeading(role)))
+            TeleportPlayerToEntry(playerPed, spawnPoint, GetRoleSpawnHeading(role))
             ShowNotification("Respawned as " .. role)
             -- Reapply role visuals and loadout
             ApplyRoleVisualsAndLoadout(role, nil)
+            QueueInventoryReequip(1250)
         end
     end
 end)
@@ -1996,6 +2061,7 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
             ApplyRoleVisualsAndLoadout(role, oldRole)
             Citizen.Wait(100)
             spawnPlayer(role)
+            QueueInventoryReequip(1250)
         else
             Log("cnr:updatePlayerData: playerPed invalid during role change spawn.", "warn", "CNR_CLIENT")
         end
@@ -2004,12 +2070,14 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
             ApplyRoleVisualsAndLoadout(role, oldRole)
             Citizen.Wait(100)
             spawnPlayer(role)
+            QueueInventoryReequip(1250)
         else
             Log("cnr:updatePlayerData: playerPed invalid during initial role spawn.", "warn", "CNR_CLIENT")
         end
     elseif not oldRole and role and role == "citizen" then
         if playerPedOnUpdate and playerPedOnUpdate ~= 0 and playerPedOnUpdate ~= -1 and DoesEntityExist(playerPedOnUpdate) then
             spawnPlayer(role)
+            QueueInventoryReequip(1250)
         else
             Log("cnr:updatePlayerData: playerPed invalid during initial citizen spawn.", "warn", "CNR_CLIENT")
         end
@@ -2362,8 +2430,8 @@ RegisterNUICallback('buyItem', function(data, cb)
     -- Trigger server event to buy the item
     TriggerServerEvent('cops_and_robbers:buyItem', data.itemId, data.quantity)
     
-    -- Send success response
-    cb({success = true})
+    -- Acknowledge receipt only; the server sends the final transaction result.
+    cb({success = true, pending = true})
 end)
 
 -- Register NUI callback for selling items
@@ -2379,8 +2447,8 @@ RegisterNUICallback('sellItem', function(data, cb)
     -- Trigger server event to sell the item
     TriggerServerEvent('cops_and_robbers:sellItem', data.itemId, data.quantity)
     
-    -- Send success response
-    cb({success = true})
+    -- Acknowledge receipt only; the server sends the final transaction result.
+    cb({success = true, pending = true})
 end)
 
 -- Register NUI callback for getting player inventory
@@ -2515,14 +2583,16 @@ end)
 
 -- Function to check for nearby stores and display help text
 function CheckNearbyStores()
+    if IsAnyStoreUiOpen() then
+        ClearStoreHelpText()
+        return
+    end
+
     local playerPed = PlayerPedId()
     if not playerPed or not DoesEntityExist(playerPed) then return end
     
     local playerPos = GetEntityCoords(playerPed)
     local isNearStore = false
-    local storeType = nil
-    local storeName = nil
-    local storeItems = nil
     
     if Config and Config.NPCVendors then
         for _, vendor in ipairs(Config.NPCVendors) do
@@ -2542,42 +2612,48 @@ function CheckNearbyStores()
                     
                     -- Proper store type classification and role-based access validation
                     local hasAccess = false
-                    local storeType = "civilian" -- default
+                    local vendorStoreType = "civilian" -- default
                     
                     if vendor.name == "Cop Store" then
-                        storeType = "cop"
+                        vendorStoreType = "cop"
                         hasAccess = (role == "cop")
                     elseif vendor.name == "Gang Supplier" or vendor.name == "Black Market Dealer" then
-                        storeType = "robber"
+                        vendorStoreType = "robber"
                         hasAccess = (role == "robber")
                     else
                         -- General stores accessible to all roles
-                        storeType = "civilian"
+                        vendorStoreType = "civilian"
                         hasAccess = true
                     end
-                    
-                    storeName = vendor.name
-                    storeItems = vendor.items
-                    
+
                     -- Display appropriate help text
+                    local helpText
                     if hasAccess then
-                        DisplayHelpText("Press ~INPUT_CONTEXT~ to open " .. storeName)
+                        helpText = "Press ~INPUT_CONTEXT~ to open " .. vendor.name
                     else
-                        DisplayHelpText("~r~Access Restricted: " .. storeName .. " (Role: " .. (storeType == "cop" and "Police Only" or "Robbers Only") .. ")")
+                        helpText = "~r~Access Restricted: " .. vendor.name .. " (Role: " .. (vendorStoreType == "cop" and "Police Only" or "Robbers Only") .. ")"
                     end
+
+                    ShowPersistentStoreHelpText(helpText)
                     
                     -- Check for E key press (INPUT_CONTEXT = 38)
-                    if IsControlJustPressed(0, 38) then
+                    local now = GetGameTimer()
+                    if IsControlPressed(0, 38) and (now - lastStoreInteractionTime) > STORE_INTERACTION_COOLDOWN_MS then
+                        lastStoreInteractionTime = now
                         if hasAccess then
-                            OpenStoreMenu(storeType, storeItems, storeName)
+                            OpenStoreMenu(vendorStoreType, vendor.items, vendor.name)
                         else
-                            ShowNotification("~r~You don't have access to this store. This is restricted to " .. (storeType == "cop" and "police officers" or "robbers") .. " only.")
+                            ShowNotification("~r~You don't have access to this store. This is restricted to " .. (vendorStoreType == "cop" and "police officers" or "robbers") .. " only.")
                         end
                     end
                     break
                 end
             end
         end
+    end
+
+    if not isNearStore then
+        ClearStoreHelpText()
     end
 end
 
@@ -2587,6 +2663,12 @@ function OpenStoreMenu(storeType, storeItems, storeName)
         Log("OpenStoreMenu called with invalid parameters", "error", "CNR_CLIENT")
         return
     end
+
+    if IsAnyStoreUiOpen() then
+        return
+    end
+
+    ClearStoreHelpText()
     
     -- Set the appropriate UI flag
     if storeType == "cop" then
@@ -2633,6 +2715,7 @@ RegisterNUICallback('closeStore', function(data, cb)
     
     -- Disable NUI focus
     SetNuiFocus(false, false)
+    ClearStoreHelpText()
     
     cb({success = true})
 end)
@@ -3501,11 +3584,8 @@ function SpawnPlayerAtLocation(spawnLocation, spawnHeading, role)
         playerPed = PlayerPedId()
     end
 
-    SetEntityCoords(playerPed, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
-
-    if finalHeading then
-        SetEntityHeading(playerPed, finalHeading)
-    end
+    TeleportPlayerToEntry(playerPed, spawnLocation, finalHeading)
+    QueueInventoryReequip(1000)
     
 end
 
@@ -4487,6 +4567,17 @@ local function ApplyInventoryUseEffect(itemId)
     end
 
     if itemId == "spikestrip_item" then
+        local maxSpikeStrips = (Config.MaxDeployedSpikeStrips or 3) + (playerData.extraSpikeStrips or 0)
+        for i = #currentSpikeStrips, 1, -1 do
+            if not DoesEntityExist(currentSpikeStrips[i]) then
+                table.remove(currentSpikeStrips, i)
+            end
+        end
+
+        if #currentSpikeStrips >= maxSpikeStrips then
+            return { success = false, error = "Maximum deployed spike strips reached." }
+        end
+
         RequestModel(spikeStripModelHash)
         while not HasModelLoaded(spikeStripModelHash) do
             Citizen.Wait(50)
@@ -4499,6 +4590,7 @@ local function ApplyInventoryUseEffect(itemId)
             FreezeEntityPosition(spikeStrip, true)
             PlaceObjectOnGroundProperly(spikeStrip)
             table.insert(currentSpikeStrips, spikeStrip)
+            ShowNotification("~g~Spike strip deployed.")
 
             SetTimeout(Config.SpikeStripDuration or 120000, function()
                 if DoesEntityExist(spikeStrip) then
@@ -4514,6 +4606,81 @@ local function ApplyInventoryUseEffect(itemId)
 
     return { success = false, error = "This item cannot be used directly." }
 end
+
+local function GetLocalInventoryItemCount(itemId)
+    local itemData = localPlayerInventory and localPlayerInventory[itemId]
+    if type(itemData) == "table" then
+        return tonumber(itemData.count or itemData.quantity or 0) or 0
+    end
+
+    return tonumber(itemData) or 0
+end
+
+local function UseLocalInventoryItem(itemId)
+    if GetLocalInventoryItemCount(itemId) <= 0 then
+        return false, "Item not found in inventory."
+    end
+
+    local result = ApplyInventoryUseEffect(itemId)
+    if not result.success then
+        return false, result.error or "Unable to use item."
+    end
+
+    if result.consumed then
+        TriggerServerEvent('cnr:useInventoryItem', itemId)
+    end
+
+    return true
+end
+
+RegisterCommand('+cnr_deployspikestrip', function()
+    if role ~= "cop" then
+        ShowNotification("~r~Only cops can deploy spike strips.")
+        return
+    end
+
+    local success, errorMessage = UseLocalInventoryItem("spikestrip_item")
+    if not success then
+        ShowNotification("~r~" .. (errorMessage or "You need a spike strip."))
+    end
+end, false)
+
+RegisterCommand('-cnr_deployspikestrip', function() end, false)
+RegisterKeyMapping('+cnr_deployspikestrip', 'Deploy Spike Strip', 'keyboard', 'G')
+
+Citizen.CreateThread(function()
+    local recentlySpikedVehicles = {}
+
+    while true do
+        Citizen.Wait(150)
+
+        if #currentSpikeStrips > 0 then
+            local playerPed = PlayerPedId()
+            local vehicle = GetVehiclePedIsIn(playerPed, false)
+
+            if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+                local vehicleCoords = GetEntityCoords(vehicle)
+
+                for i = #currentSpikeStrips, 1, -1 do
+                    local spikeStrip = currentSpikeStrips[i]
+                    if not DoesEntityExist(spikeStrip) then
+                        table.remove(currentSpikeStrips, i)
+                    else
+                        local stripCoords = GetEntityCoords(spikeStrip)
+                        if #(vehicleCoords - stripCoords) <= 3.2 and (recentlySpikedVehicles[vehicle] or 0) < GetGameTimer() then
+                            for tyreIndex = 0, 7 do
+                                SetVehicleTyreBurst(vehicle, tyreIndex, true, 1000.0)
+                            end
+                            recentlySpikedVehicles[vehicle] = GetGameTimer() + 5000
+                        end
+                    end
+                end
+            end
+        else
+            Citizen.Wait(600)
+        end
+    end
+end)
 
 RegisterNUICallback('equipInventoryItem', function(data, cb)
     local itemId = tostring(data and data.itemId or "")
@@ -4573,19 +4740,15 @@ RegisterNUICallback('useInventoryItem', function(data, cb)
         return
     end
 
-    local result = ApplyInventoryUseEffect(itemId)
-    if not result.success then
-        cb(result)
+    local success, errorMessage = UseLocalInventoryItem(itemId)
+    if not success then
+        cb({ success = false, error = errorMessage })
         return
-    end
-
-    if result.consumed then
-        TriggerServerEvent('cnr:useInventoryItem', itemId)
     end
 
     cb({
         success = true,
-        consumed = result.consumed == true
+        consumed = true
     })
 end)
 

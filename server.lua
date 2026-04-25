@@ -1367,11 +1367,26 @@ PerformanceOptimizer.CreateOptimizedLoop(function()
                 if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
                     local speed = GetEntitySpeed(vehicle) * 2.236936 -- Convert m/s to mph
                     local currentTime = os.time()
-                    local vehicleClass = GetVehicleClass(vehicle)
+                    local vehicleClass = nil
+                    if type(GetVehicleClass) == "function" then
+                        vehicleClass = GetVehicleClass(vehicle)
+                    end
                     
                     -- Exclude aircraft (planes/helicopters) and boats from speeding detection
                     local isAircraft = (vehicleClass == 15 or vehicleClass == 16) -- Helicopters and planes
                     local isBoat = (vehicleClass == 14) -- Boats
+                    if vehicleClass == nil and type(GetEntityModel) == "function" then
+                        local vehicleModel = GetEntityModel(vehicle)
+                        if vehicleModel and vehicleModel ~= 0 then
+                            if type(IsThisModelAHeli) == "function" and IsThisModelAHeli(vehicleModel) then
+                                isAircraft = true
+                            elseif type(IsThisModelAPlane) == "function" and IsThisModelAPlane(vehicleModel) then
+                                isAircraft = true
+                            elseif type(IsThisModelABoat) == "function" and IsThisModelABoat(vehicleModel) then
+                                isBoat = true
+                            end
+                        end
+                    end
                     local speedLimit = Config.SpeedLimitMph or 60.0
                     
                     -- Initialize player data if not exists
@@ -1934,25 +1949,9 @@ function GetItemImagePath(configItem)
     if configItem.image and configItem.image ~= "" then
         return configItem.image
     end
-    
-    -- Generate image path based on category and itemId
-    local category = configItem.category or "misc"
-    local itemId = configItem.itemId or "default"
-    
-    -- Set default images based on category
-    if category:lower() == "weapons" then
-        return "img/items/" .. itemId .. ".png"
-    elseif category:lower() == "ammo" then
-        return "img/items/ammo.png"
-    elseif category:lower() == "armor" then
-        return "img/items/armor.png"
-    elseif category:lower() == "tools" then
-        return "img/items/tool.png"
-    elseif category:lower() == "medical" then
-        return "img/items/medical.png"
-    else
-        return "img/items/default.png"
-    end
+
+    -- Let the NUI fall back to icons unless a real asset is explicitly configured.
+    return nil
 end
 
 RegisterNetEvent('cops_and_robbers:getItemList')
@@ -2008,7 +2007,7 @@ AddEventHandler('cops_and_robbers:getItemList', function(storeType, vendorItemId
                         forCop = configItem.forCop,
                         minLevelCop = configItem.minLevelCop or 1,
                         minLevelRobber = configItem.minLevelRobber or 1,
-                        icon = configItem.icon or "ðŸ“¦", -- Default icon
+                        icon = configItem.icon or "📦",
                         image = GetItemImagePath(configItem), -- Use helper function for proper image path
                         description = configItem.description or ""
                     }
@@ -2420,9 +2419,17 @@ AddEventHandler('cops_and_robbers:buyItem', function(itemId, quantity)
             action = 'updateMoney',
             cash = transactionResult.newBalance
         })
+
+        local updatedPlayerData = GetCnrPlayerData(src)
+        if updatedPlayerData then
+            local pDataForBasicInfo = shallowcopy(updatedPlayerData)
+            pDataForBasicInfo.inventory = nil
+            SafeTriggerClientEvent('cnr:updatePlayerData', src, pDataForBasicInfo)
+            SafeTriggerClientEvent('cnr:syncInventory', src, MinimizeInventoryForSync(updatedPlayerData.inventory))
+        end
         
         -- Refresh sell list for updated inventory
-        TriggerClientEvent('cops_and_robbers:refreshSellListIfNeeded', src)
+        TriggerClientEvent('cnr:sendNUIMessage', src, { action = 'refreshInventory' })
         
         -- Note: Inventory updates and saves are handled automatically by SecureInventory and DataManager
         -- No need for immediate saves as the new system uses batched, efficient saving
@@ -2461,9 +2468,17 @@ AddEventHandler('cops_and_robbers:sellItem', function(itemId, quantity)
             action = 'updateMoney',
             cash = transactionResult.newBalance
         })
+
+        local updatedPlayerData = GetCnrPlayerData(src)
+        if updatedPlayerData then
+            local pDataForBasicInfo = shallowcopy(updatedPlayerData)
+            pDataForBasicInfo.inventory = nil
+            SafeTriggerClientEvent('cnr:updatePlayerData', src, pDataForBasicInfo)
+            SafeTriggerClientEvent('cnr:syncInventory', src, MinimizeInventoryForSync(updatedPlayerData.inventory))
+        end
         
         -- Refresh sell list for updated inventory
-        TriggerClientEvent('cops_and_robbers:refreshSellListIfNeeded', src)
+        TriggerClientEvent('cnr:sendNUIMessage', src, { action = 'refreshInventory' })
         
         -- Note: Inventory updates and saves are handled automatically by SecureInventory and DataManager
         -- No need for immediate saves as the new system uses batched, efficient saving
@@ -4443,9 +4458,43 @@ end
 -- Initialize player inventory when they load (called from main server.lua)
 -- Accepts pData directly to avoid global lookups. playerId is for logging.
 function InitializePlayerInventory(pData, playerId)
-    if pData and not pData.inventory then
+    if not pData then
+        return
+    end
+
+    if not pData.inventory then
         pData.inventory = {} -- { itemId = { count = X, metadata = {...} } }
         Log("Initialized empty inventory for player " .. (playerId or "Unknown"), "info", "CNR_INV_SERVER")
+        return
+    end
+
+    for itemId, itemData in pairs(pData.inventory) do
+        if type(itemData) ~= "table" then
+            local normalizedCount = tonumber(itemData) or 0
+
+            if normalizedCount > 0 then
+                local configItem = FindConfigItemById(itemId)
+                pData.inventory[itemId] = {
+                    itemId = itemId,
+                    count = normalizedCount,
+                    name = (configItem and configItem.name) or itemId,
+                    category = (configItem and configItem.category) or "Misc"
+                }
+            else
+                pData.inventory[itemId] = nil
+            end
+        else
+            itemData.itemId = itemData.itemId or itemId
+            itemData.count = tonumber(itemData.count or itemData.quantity or 0) or 0
+
+            if itemData.count <= 0 then
+                pData.inventory[itemId] = nil
+            else
+                local configItem = FindConfigItemById(itemId)
+                itemData.name = itemData.name or (configItem and configItem.name) or itemId
+                itemData.category = itemData.category or (configItem and configItem.category) or "Misc"
+            end
+        end
     end
 end
 
@@ -4543,7 +4592,12 @@ function RemoveItem(pData, itemId, quantity, playerId)
     
     -- Validate with secure inventory if available
     if SecureInventory then
-        return SecureInventory.RemoveItem(pData, itemId, quantity, playerId)
+        if not playerId then return false end
+        local success = SecureInventory.RemoveItem(playerId, itemId, quantity, "legacy_remove")
+        if success then
+            TriggerClientEvent('cnr:syncInventory', playerId, MinimizeInventoryForSync(pData.inventory))
+        end
+        return success
     end
     
     if not pData.inventory[itemId] or pData.inventory[itemId].count < quantity then

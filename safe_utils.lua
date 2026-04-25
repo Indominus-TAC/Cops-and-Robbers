@@ -118,11 +118,19 @@ function tablelength(T)
 end
 
 function MinimizeInventoryForSync(richInventory)
-    if not richInventory then return {} end
+    if type(richInventory) ~= "table" then return {} end
     local minimalInv = {}
     for itemId, itemData in pairs(richInventory) do
-        if itemData and itemData.count then
-            minimalInv[itemId] = { count = itemData.count }
+        local itemCount = 0
+
+        if type(itemData) == "table" then
+            itemCount = tonumber(itemData.count or itemData.quantity or 0) or 0
+        else
+            itemCount = tonumber(itemData) or 0
+        end
+
+        if itemCount > 0 then
+            minimalInv[itemId] = { count = itemCount }
         end
     end
     return minimalInv

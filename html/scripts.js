@@ -131,8 +131,9 @@ window.addEventListener('message', function(event) {
             break;        case 'updateStoreData':
             if (data.items && data.items.length > 0) {
                 // Update the current store data
-                window.items = data.items; // Fix: Set window.items so loadGridItems() can access it
-                window.currentStoreItems = data.items;
+                window.items = normalizeStoreItems(data.items); // Fix: Set window.items so loadGridItems() can access it
+                window.currentStoreItems = window.items;
+                loadCategories();
                 window.playerInfo = data.playerInfo; // Fix: Set window.playerInfo for level checks
                 window.currentPlayerInfo = data.playerInfo;
                 // Refresh the currently displayed tab
@@ -221,7 +222,18 @@ window.addEventListener('message', function(event) {
             break;
         case 'storeFullItemConfig':
             if (data.itemConfig) {
-                window.fullItemConfig = data.itemConfig;
+                const rawItemConfig = data.itemConfig;
+                window.fullItemConfig = {};
+
+                if (Array.isArray(rawItemConfig)) {
+                    rawItemConfig.forEach((item) => {
+                        if (item && item.itemId) {
+                            window.fullItemConfig[item.itemId] = item;
+                        }
+                    });
+                } else {
+                    window.fullItemConfig = rawItemConfig;
+                }
                 
                 // Keep configured images only. Missing files spam NUI logs, so use icons as the fallback.
                 for (const itemId in window.fullItemConfig) {
@@ -630,7 +642,7 @@ function openStoreMenu(storeName, storeItems, playerInfo) {
     
     if (storeMenuUI && storeTitleEl) {
         storeTitleEl.textContent = storeName || 'Store';
-        window.items = storeItems || [];
+        window.items = normalizeStoreItems(storeItems || []);
         
         playerInfo = playerInfo || {
             cash: dataNumber(window.playerInfo?.cash, window.currentPlayerInfo?.cash, previousCash, 0),
@@ -686,6 +698,7 @@ function openStoreMenu(storeName, storeItems, playerInfo) {
         
         window.currentCategory = null;
         window.currentTab = 'buy';
+        setStoreTab('buy');
         loadCategories();
         loadGridItems();
         storeMenuUI.style.display = 'block';
@@ -693,6 +706,52 @@ function openStoreMenu(storeName, storeItems, playerInfo) {
         fetchSetNuiFocus(true, true);
     }
 }
+
+function normalizeStoreItems(storeItems) {
+    if (!Array.isArray(storeItems)) {
+        return [];
+    }
+
+    return storeItems.map((item) => {
+        if (typeof item === 'string') {
+            const configItem = window.fullItemConfig && window.fullItemConfig[item];
+            if (configItem) {
+                return {
+                    ...configItem,
+                    itemId: configItem.itemId || item,
+                    price: configItem.price || configItem.basePrice || 0
+                };
+            }
+
+            return null;
+        }
+
+        return item;
+    }).filter(Boolean);
+}
+
+function setStoreTab(tabName) {
+    const storeMenu = document.getElementById('store-menu');
+    if (!storeMenu) return;
+
+    window.currentTab = tabName;
+
+    storeMenu.querySelectorAll('#tab-menu .tab-btn').forEach((button) => {
+        const isActive = button.dataset.tab === tabName;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    storeMenu.querySelectorAll('#buy-section, #sell-section').forEach((content) => {
+        content.classList.remove('active');
+    });
+
+    const activeTabContent = storeMenu.querySelector(`#${tabName}-section`);
+    if (activeTabContent) {
+        activeTabContent.classList.add('active');
+    }
+}
+
 function closeStoreMenu() {
     const storeMenuUI = document.getElementById('store-menu');
     if (storeMenuUI) {
@@ -714,14 +773,9 @@ function closeStoreMenu() {
 }
 
 // Store Tab and Category Management
-document.querySelectorAll('.tab-btn').forEach(btn => {
+document.querySelectorAll('#store-menu #tab-menu .tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        window.currentTab = btn.dataset.tab;
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        const activeTabContent = document.getElementById(`${window.currentTab}-section`);
-        if (activeTabContent) activeTabContent.classList.add('active');
+        setStoreTab(btn.dataset.tab);
         if (window.currentTab === 'sell') loadSellGridItems();
         else loadGridItems();
     });
@@ -738,7 +792,7 @@ function loadCategories() {
     allBtn.textContent = 'All';
     allBtn.onclick = () => {
         window.currentCategory = null;
-        document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+        categoryList.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
         allBtn.classList.add('active');
         if (window.currentTab === 'buy') loadGridItems();
     };
@@ -750,7 +804,7 @@ function loadCategories() {
         btn.textContent = category;
         btn.onclick = () => {
             window.currentCategory = category;
-            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+            categoryList.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             if (window.currentTab === 'buy') loadGridItems();
         };
@@ -791,72 +845,30 @@ function loadGridItems() {
         return;
     }
     
-    // Use optimized rendering if UIOptimizer is available
-    if (window.UIOptimizer) {
-        // Validate and fix items before rendering
-        const validatedItems = itemsArray.map((item, index) => {
-            if (!item) return null;
-            
-            // Ensure the item has an itemId
-            if (!item.itemId) {
-                if (item.name) {
-                    item.itemId = item.name.toLowerCase().replace(/\s+/g, '_');
-                } else {
-                    item.itemId = 'unknown_item_' + index;
-                    item.name = 'Unknown Item';
-                }
-            }
-            
-            // Add a name if missing
-            if (!item.name) {
-                item.name = item.itemId;
-            }
-            
-            return item;
-        }).filter(item => item !== null);
+    const fragment = document.createDocumentFragment();
+    
+    itemsArray.forEach((item, index) => {
+        if (!item) {
+            console.error('[CNR_NUI_DEBUG] Null item at index', index);
+            return;
+        }
         
-        window.UIOptimizer.renderGridOptimized(gridContainer, validatedItems, (item) => {
-            return window.UIOptimizer.createOptimizedInventorySlot(item, 'buy');
-        });
-    } else {
-        // Fallback to original method
-        const fragment = document.createDocumentFragment();
+        if (!item.itemId) {
+            console.warn('[CNR_NUI_DEBUG] Item missing itemId at index', index, 'attempting to fix...', item);
+            item.itemId = item.name ? item.name.toLowerCase().replace(/\s+/g, '_') : 'unknown_item_' + index;
+        }
         
-        itemsArray.forEach((item, index) => {
-            if (!item) {
-                console.error('[CNR_NUI_DEBUG] Null item at index', index);
-                return;
-            }
-            
-            // Ensure the item has an itemId, create one if missing
-            if (!item.itemId) {
-                console.warn('[CNR_NUI_DEBUG] Item missing itemId at index', index, 'attempting to fix...', item);
-                if (item.name) {
-                    item.itemId = item.name.toLowerCase().replace(/\s+/g, '_');
-                } else {
-                    item.itemId = 'unknown_item_' + index;
-                    item.name = 'Unknown Item';
-                }
-                console.log('[CNR_NUI_DEBUG] Fixed item with generated itemId:', item.itemId);
-            }
-            
-            // Add a name if missing
-            if (!item.name) {
-                item.name = item.itemId;
-            }
-            
-            console.log('[CNR_NUI_DEBUG] Creating slot for item:', item.itemId, item.name);
-            const slot = createInventorySlot(item, 'buy');
-            if (slot) {
-                fragment.appendChild(slot);
-                console.log('[CNR_NUI_DEBUG] Successfully created slot for:', item.itemId);
-            } else {
-                console.error('[CNR_NUI_DEBUG] Failed to create slot for:', item.itemId);
-            }
-        });
+        if (!item.name) {
+            item.name = item.itemId;
+        }
         
-        gridContainer.appendChild(fragment);
-    }
+        const slot = createInventorySlot(item, 'buy');
+        if (slot) {
+            fragment.appendChild(slot);
+        }
+    });
+    
+    gridContainer.appendChild(fragment);
     console.log('[CNR_NUI_DEBUG] Rendered', itemsArray.length, 'items to grid');
     console.log('[CNR_NUI_DEBUG] Grid container children count:', gridContainer.children.length);
 }
@@ -952,7 +964,8 @@ function loadSellGridItems() {
                         count: minItem.count,
                         category: itemDetails.category || 'Miscellaneous',
                         sellPrice: sellPrice,
-                        image: itemDetails.image || null
+                        image: itemDetails.image || null,
+                        icon: itemDetails.icon || getItemIcon({ ...itemDetails, itemId: minItem.itemId })
                     };
                     
                     const slotElement = createInventorySlot(richItem, 'sell');
@@ -1060,17 +1073,11 @@ function createInventorySlot(item, type = 'buy') {
         imgElement.onerror = function() {
             console.log(`[CNR_NUI] Image load error for ${item.itemId}, using fallback`);
             this.style.display = 'none';
-            const fallbackIcon = document.createElement('div');
-            fallbackIcon.className = 'item-icon';
-            fallbackIcon.textContent = getItemIcon(item.category, item.name);
-            this.parentNode.appendChild(fallbackIcon);
+            appendStoreItemIcon(this.parentNode, item);
         };
         iconContainer.appendChild(imgElement);
     } else {
-        const itemIcon = document.createElement('div');
-        itemIcon.className = 'item-icon';
-        itemIcon.textContent = item.icon || getItemIcon(item.category || 'Unknown', item.name || item.itemId || 'Unknown');
-        iconContainer.appendChild(itemIcon);
+        appendStoreItemIcon(iconContainer, item);
     }
       // Add level requirement badge if locked
     if (isLocked) {
@@ -1137,10 +1144,73 @@ function createInventorySlot(item, type = 'buy') {
     return slot;
 }
 
+function appendStoreItemIcon(container, item) {
+    const icon = document.createElement('i');
+    icon.className = `item-icon fa-solid ${getStoreItemIconClass(item)}`;
+    icon.setAttribute('aria-hidden', 'true');
+    container.appendChild(icon);
+}
+
+function getStoreItemIconClass(item) {
+    const itemId = String(item?.itemId || '').toLowerCase();
+    const category = String(item?.category || '').toLowerCase();
+    const name = String(item?.name || '').toLowerCase();
+
+    const exact = {
+        ammo_pistol: 'fa-box',
+        ammo_rifle: 'fa-boxes-stacked',
+        ammo_shotgun: 'fa-box',
+        ammo_sniper: 'fa-crosshairs',
+        armor: 'fa-shield-halved',
+        heavy_armor: 'fa-shield',
+        medkit: 'fa-kit-medical',
+        firstaidkit: 'fa-briefcase-medical',
+        lockpick: 'fa-key',
+        adv_lockpick: 'fa-unlock-keyhole',
+        hacking_device: 'fa-laptop-code',
+        drill: 'fa-screwdriver-wrench',
+        thermite: 'fa-fire',
+        c4: 'fa-bomb',
+        speedradar_gun: 'fa-satellite-dish',
+        spikestrip_item: 'fa-triangle-exclamation',
+        k9whistle: 'fa-volume-high',
+        weapon_nightstick: 'fa-grip-lines-vertical',
+        weapon_flashlight: 'fa-lightbulb',
+        weapon_stungun: 'fa-bolt',
+        weapon_stunrod: 'fa-bolt',
+        weapon_fireextinguisher: 'fa-fire-extinguisher',
+        weapon_flare: 'fa-wand-sparkles',
+        weapon_flaregun: 'fa-wand-sparkles',
+        weapon_smokegrenade: 'fa-cloud',
+        weapon_bzgas: 'fa-cloud',
+        weapon_stickybomb: 'fa-bomb',
+        weapon_grenade: 'fa-bomb',
+        weapon_rpg: 'fa-rocket',
+        weapon_hominglauncher: 'fa-rocket',
+        gadget_parachute: 'fa-parachute-box'
+    };
+
+    if (exact[itemId]) return exact[itemId];
+    if (itemId.includes('ammo') || name.includes('ammo')) return 'fa-box';
+    if (itemId.includes('shotgun') || name.includes('shotgun')) return 'fa-gun';
+    if (itemId.includes('rifle') || name.includes('rifle')) return 'fa-gun';
+    if (itemId.includes('pistol') || name.includes('pistol')) return 'fa-gun';
+    if (itemId.includes('weapon_') || category.includes('weapon')) return 'fa-gun';
+    if (category.includes('armor')) return 'fa-shield-halved';
+    if (category.includes('cop')) return 'fa-shield';
+    if (category.includes('utility')) return 'fa-screwdriver-wrench';
+    if (category.includes('accessor')) return 'fa-mask';
+
+    return 'fa-cube';
+}
+
 // Get appropriate icon for item based on category and name
 function getItemIcon(category, itemName) {
+    let itemId = null;
+
     if (category && typeof category === 'object') {
         const item = category;
+        itemId = item.itemId || item.id || null;
         category = item.category || item.type || 'Unknown';
         itemName = item.name || item.label || item.itemId || 'Unknown';
     }
@@ -1150,6 +1220,7 @@ function getItemIcon(category, itemName) {
 
     const normalizedCategory = String(category).toLowerCase();
     const normalizedName = String(itemName).toLowerCase();
+    const normalizedItemId = itemId ? String(itemId).toLowerCase() : '';
     const itemSpecificIcons = {
         ammo_pistol: '▣',
         ammo_rifle: '▦',
@@ -1166,8 +1237,20 @@ function getItemIcon(category, itemName) {
         weapon_stungun: '⚡',
         weapon_stunrod: '⚡',
         weapon_flare: '✹',
-        weapon_flaregun: '✹'
+        weapon_flaregun: '✹',
+        weapon_pumpshotgun: '💥',
+        weapon_combatpistol: '🔫',
+        weapon_revolver_mk2: '🔫',
+        weapon_heavyrevolver_mk2: '🔫',
+        weapon_combatmg: '💥',
+        weapon_combatmg_mk2: '💥',
+        weapon_smokegrenade: '💨',
+        k9whistle: '🐕'
     };
+
+    if (normalizedItemId && itemSpecificIcons[normalizedItemId]) {
+        return itemSpecificIcons[normalizedItemId];
+    }
 
     for (const [key, icon] of Object.entries(itemSpecificIcons)) {
         if (normalizedName === key || normalizedName.includes(key.replace('weapon_', '').replace('_item', '').replace('_', ' '))) {
@@ -1257,14 +1340,8 @@ async function handleItemAction(itemId, quantity, actionType) {
             throw new Error(jsonData.error || jsonData.message || `HTTP error ${rawResponse.status}`);
         }
 
-        if (jsonData.success) {
-            showToast(`Successfully ${actionType === 'buy' ? 'purchased' : 'sold'} item.`, 'success');
-            if (actionType === 'sell') {
-                loadSellItems(); // Refresh sell list immediately
-            }
-            // Server-driven refresh via 'refreshSellListIfNeeded' NUI message will handle other cases.
-        } else {
-            showToast(`${actionType === 'buy' ? 'Purchase' : 'Sell'} failed.`, 'error');
+        if (!jsonData.success) {
+            showToast(jsonData.message || `${actionType === 'buy' ? 'Purchase' : 'Sell'} request failed.`, 'error');
         }
 
     } catch (error) {
@@ -2236,7 +2313,7 @@ function canItemBeEquipped(itemData) {
 
 // Check if item can be used
 function canItemBeUsed(itemData) {
-    const usableCategories = ['Utility', 'Armor'];
+    const usableCategories = ['Utility', 'Armor', 'Cop Gear'];
     const usableItems = ['medkit', 'firstaidkit', 'armor', 'heavy_armor', 'spikestrip_item'];
     
     return usableCategories.includes(itemData.category) || usableItems.includes(itemData.itemId);

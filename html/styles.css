@@ -6730,3 +6730,180 @@ body {
         min-width: auto;
     }
 }
+
+/* Store polish and stability overrides */
+#store-menu {
+    width: min(88vw, 1440px);
+    height: min(82vh, 860px);
+    max-height: 860px;
+    border-radius: 8px;
+    border: 1px solid rgba(74, 144, 226, 0.5);
+    background: rgba(12, 16, 28, 0.96);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+#store-menu .store-header {
+    padding: 18px 28px;
+    background: rgba(10, 12, 22, 0.98);
+    box-shadow: none;
+}
+
+#store-menu .store-title-section h1 {
+    font-size: 1.6rem;
+    letter-spacing: 0;
+}
+
+#store-menu .store-subtitle {
+    color: rgba(236, 241, 255, 0.64);
+}
+
+#store-menu #tab-menu {
+    padding: 0 24px;
+    background: rgba(16, 22, 38, 0.96);
+}
+
+#store-menu .tab-btn {
+    border-radius: 6px 6px 0 0;
+    padding: 14px 18px;
+}
+
+#store-menu .tab-btn.active {
+    background: rgba(74, 144, 226, 0.16);
+}
+
+#store-menu .tab-indicator {
+    background: #4a90e2;
+}
+
+#store-menu .player-info-bar {
+    padding: 16px 28px;
+    background: rgba(14, 20, 36, 0.96);
+}
+
+#store-menu .player-cash,
+#store-menu .player-level {
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+}
+
+#store-menu .category-filter {
+    padding: 12px 24px;
+    background: rgba(12, 18, 34, 0.96);
+}
+
+#store-menu .category-list {
+    gap: 8px;
+}
+
+#store-menu .category-btn {
+    margin: 0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+#store-menu .category-btn.active {
+    background: #4a90e2;
+    border-color: #4a90e2;
+    box-shadow: none;
+}
+
+#store-menu .inventory-grid {
+    max-height: none;
+    padding: 18px 24px 24px;
+    grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+    gap: 12px;
+}
+
+#store-menu .inventory-slot {
+    aspect-ratio: auto;
+    min-height: 154px;
+    border-radius: 8px;
+    padding: 12px;
+    background: rgba(30, 38, 62, 0.92);
+    box-shadow: none;
+}
+
+#store-menu .inventory-slot:hover {
+    transform: translateY(-2px);
+    border-color: rgba(74, 144, 226, 0.8);
+    background: rgba(36, 48, 78, 0.96);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.26);
+}
+
+#store-menu .item-icon-container {
+    flex: 0 0 72px;
+    margin-bottom: 10px;
+}
+
+#store-menu .item-icon,
+#store-menu .item-image {
+    width: 54px;
+    height: 54px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+#store-menu .item-icon {
+    color: #8fbaff;
+    font-size: 26px;
+}
+
+#store-menu .item-name {
+    min-height: 34px;
+    white-space: normal;
+    line-height: 1.25;
+    font-size: 13px;
+}
+
+#store-menu .item-price {
+    font-size: 14px;
+    color: #4ade80;
+    text-shadow: none;
+}
+
+#store-menu .quantity-badge {
+    top: 6px;
+    left: 6px;
+    border-radius: 999px;
+    padding: 3px 7px;
+}
+
+#store-menu .action-overlay {
+    border-radius: 8px;
+    background: rgba(20, 28, 48, 0.94);
+    gap: 8px;
+}
+
+#store-menu .action-overlay .quantity-input {
+    width: 64px;
+    height: 32px;
+    margin: 0;
+    border-radius: 6px;
+}
+
+#store-menu .action-overlay .action-btn {
+    min-width: 72px;
+    max-width: none;
+    height: 34px;
+    border-radius: 6px;
+    background: #4a90e2;
+    color: #fff;
+}
+
+@media (max-width: 900px) {
+    #store-menu {
+        width: 96vw;
+        height: 88vh;
+    }
+
+    #store-menu .player-stats {
+        gap: 10px;
+    }
+
+    #store-menu .inventory-grid {
+        grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+        padding: 14px;
+    }
+}
