@@ -54,6 +54,9 @@ RegisterNetEvent('cnr:updateCrewInfo')
 RegisterNetEvent('cnr:startHeistExecution')
 RegisterNetEvent('cnr:updateHeistStage')
 RegisterNetEvent('cnr:policeAlert')
+RegisterNetEvent('cnr:receivePoliceCadData')
+RegisterNetEvent('cnr:receiveAdminLiveMapData')
+RegisterNetEvent('cnr:receiveRoleTextMessage')
 
 -- =====================================
 --           VARIABLES
@@ -79,6 +82,7 @@ local role = nil
 local playerCash = 0
 local currentSpikeStrips = {}
 local spikeStripModelHash = GetHashKey("p_ld_stinger_s")
+local pendingAdminLiveMapCallbacks = {}
 local playerStats = {
     heists = 0,
     arrests = 0,
@@ -149,6 +153,7 @@ local isInventoryOpen = false
 local localPlayerInventory = {}
 local localPlayerEquippedItems = {}
 local pendingPoliceLookupCallbacks = {}
+local pendingPoliceCadCallbacks = {}
 local roleSelectionShownForCurrentDeath = false
 local deathReportedForCurrentLife = false
 local adminNoClipEnabled = false
@@ -556,6 +561,108 @@ local function GetMedicalStoreBlipName(vendor)
     end
 
     return vendor.blipName or vendor.name or "Medical Store"
+end
+
+local function GetVehicleTypeLabelFromClass(vehicleClass)
+    if vehicleClass == 15 then
+        return "Helicopter"
+    elseif vehicleClass == 16 then
+        return "Plane"
+    elseif vehicleClass == 14 then
+        return "Boat"
+    elseif vehicleClass == 8 then
+        return "Motorcycle"
+    end
+
+    return "Vehicle"
+end
+
+local function ResolveWeaponDisplayLabel(weaponHash)
+    if not weaponHash or weaponHash == 0 then
+        return "Unarmed"
+    end
+
+    local label = nil
+    if type(GetWeaponDisplayNameFromHash) == "function" and type(GetLabelText) == "function" then
+        local weaponTextKey = GetWeaponDisplayNameFromHash(weaponHash)
+        if weaponTextKey and weaponTextKey ~= "" then
+            local translated = GetLabelText(weaponTextKey)
+            if translated and translated ~= "NULL" then
+                label = translated
+            end
+        end
+    end
+
+    return label or tostring(weaponHash)
+end
+
+local function ResolveVehicleDisplayLabel(vehicle)
+    if not vehicle or vehicle == 0 then
+        return nil, nil
+    end
+
+    local vehicleClass = GetVehicleClass(vehicle)
+    local vehicleType = GetVehicleTypeLabelFromClass(vehicleClass)
+    local modelName = tostring(GetEntityModel(vehicle))
+
+    if type(GetDisplayNameFromVehicleModel) == "function" and type(GetLabelText) == "function" then
+        local displayName = GetDisplayNameFromVehicleModel(GetEntityModel(vehicle))
+        if displayName and displayName ~= "" then
+            local translated = GetLabelText(displayName)
+            modelName = (translated and translated ~= "NULL") and translated or displayName
+        end
+    end
+
+    return vehicleType, modelName
+end
+
+local function EnhancePoliceCadPayload(cadData)
+    if type(cadData) ~= "table" then
+        return cadData
+    end
+
+    local enhancedPayload = {
+        officers = {},
+        calls = cadData.calls or {},
+        suspects = cadData.suspects or {},
+        generatedAt = cadData.generatedAt or os.time()
+    }
+
+    for _, officer in ipairs(cadData.officers or {}) do
+        local enhancedOfficer = {}
+        for key, value in pairs(officer) do
+            enhancedOfficer[key] = value
+        end
+
+        local playerIndex = GetPlayerFromServerId(officer.serverId or -1)
+        if playerIndex and playerIndex ~= -1 then
+            local officerPed = GetPlayerPed(playerIndex)
+            if officerPed and officerPed ~= 0 and DoesEntityExist(officerPed) then
+                local entityToTrack = officerPed
+                local vehicleType = nil
+                local vehicleModel = nil
+                if IsPedInAnyVehicle(officerPed, false) then
+                    entityToTrack = GetVehiclePedIsIn(officerPed, false)
+                    vehicleType, vehicleModel = ResolveVehicleDisplayLabel(entityToTrack)
+                end
+
+                local coords = GetEntityCoords(officerPed)
+                enhancedOfficer.coords = {
+                    x = coords.x,
+                    y = coords.y,
+                    z = coords.z
+                }
+                enhancedOfficer.speedMph = math.floor((GetEntitySpeed(entityToTrack) * 2.236936) + 0.5)
+                enhancedOfficer.vehicleType = vehicleType or enhancedOfficer.vehicleType
+                enhancedOfficer.vehicleModel = vehicleModel or enhancedOfficer.vehicleModel
+                enhancedOfficer.equipped = ResolveWeaponDisplayLabel(GetSelectedPedWeapon(officerPed))
+            end
+        end
+
+        enhancedPayload.officers[#enhancedPayload.officers + 1] = enhancedOfficer
+    end
+
+    return enhancedPayload
 end
 
 local function GetRoleSpawnHeading(playerRole)
@@ -1723,6 +1830,13 @@ end, false)
 RegisterCommand('-cnr_toggleadminpanel', function() end, false)
 RegisterKeyMapping('+cnr_toggleadminpanel', 'Open Admin Panel', 'keyboard', Config.Keybinds.toggleAdminPanelKey or 'F12')
 
+RegisterCommand('+cnr_openrolemenu', function()
+    TriggerServerEvent('cnr:openRoleActionMenu')
+end, false)
+
+RegisterCommand('-cnr_openrolemenu', function() end, false)
+RegisterKeyMapping('+cnr_openrolemenu', 'Open Police/Robber Menu', 'keyboard', Config.Keybinds.openRoleMenuKey or 'F11')
+
 -- F5 - Role Selection Menu
 Citizen.CreateThread(function()
     while true do
@@ -1735,11 +1849,12 @@ Citizen.CreateThread(function()
 end)
 
 -- Event handlers for admin status check
-AddEventHandler('cnr:showAdminPanel', function(players)
+AddEventHandler('cnr:showAdminPanel', function(players, liveMapData)
     -- Show admin panel UI
     SendNUIMessage({
         action = 'showAdminPanel',
-        players = players or {}
+        players = players or {},
+        liveMapData = liveMapData or { players = {}, generatedAt = os.time() }
     })
     SetNuiFocus(true, true)
 end)
@@ -2596,6 +2711,63 @@ AddEventHandler('cnr:lookupRobberInfoResult', function(requestId, result)
             error = "Lookup failed."
         })
     end
+end)
+
+AddEventHandler('cnr:receivePoliceCadData', function(requestId, cadData, citationReasons)
+    local enhancedCadData = EnhancePoliceCadPayload(cadData or {})
+    local callback = requestId and pendingPoliceCadCallbacks[requestId] or nil
+
+    if callback then
+        pendingPoliceCadCallbacks[requestId] = nil
+        callback({
+            success = true,
+            cadData = enhancedCadData,
+            citationReasons = citationReasons or {}
+        })
+        return
+    end
+
+    SendNUIMessage({
+        action = 'updatePoliceCadData',
+        cadData = enhancedCadData,
+        citationReasons = citationReasons or {}
+    })
+end)
+
+AddEventHandler('cnr:receiveAdminLiveMapData', function(requestId, liveMapData)
+    local callback = requestId and pendingAdminLiveMapCallbacks[requestId] or nil
+    local payload = liveMapData or {
+        players = {},
+        generatedAt = os.time()
+    }
+
+    if callback then
+        pendingAdminLiveMapCallbacks[requestId] = nil
+        callback({
+            success = true,
+            liveMapData = payload
+        })
+        return
+    end
+
+    SendNUIMessage({
+        action = 'updateAdminLiveMapData',
+        liveMapData = payload
+    })
+end)
+
+AddEventHandler('cnr:receiveRoleTextMessage', function(messageData)
+    local senderName = messageData and messageData.fromName or "Unknown"
+    local senderRole = messageData and messageData.fromRole or "player"
+    local message = messageData and messageData.message or ""
+    if message == "" then
+        return
+    end
+
+    TriggerEvent('chat:addMessage', {
+        args = { string.format("^5Text [%s]", senderRole), string.format("%s: %s", senderName, message) }
+    })
+    ShowNotification(string.format("~b~Text from %s~s~: %s", senderName, message))
 end)
 
 Citizen.CreateThread(function()
@@ -5584,7 +5756,7 @@ RegisterNUICallback('callRoleVehicle', function(data, cb)
 end)
 
 RegisterNUICallback('requestPoliceAssistance', function(data, cb)
-    TriggerServerEvent('cnr:requestPoliceAssistance')
+    TriggerServerEvent('cnr:requestPoliceAssistance', data and data.urgent == true)
     cb({ success = true })
 end)
 
@@ -5600,6 +5772,59 @@ RegisterNUICallback('lookupRobberInfo', function(data, cb)
     TriggerServerEvent('cnr:lookupRobberInfo', targetId, requestId)
 end)
 
+RegisterNUICallback('requestPoliceCadData', function(data, cb)
+    local requestId = ("cad_%s_%s"):format(GetGameTimer(), math.random(1000, 9999))
+    pendingPoliceCadCallbacks[requestId] = cb
+    TriggerServerEvent('cnr:requestPoliceCadData', requestId)
+end)
+
+RegisterNUICallback('requestAdminLiveMapData', function(data, cb)
+    local requestId = ("adminmap_%s_%s"):format(GetGameTimer(), math.random(1000, 9999))
+    pendingAdminLiveMapCallbacks[requestId] = cb
+    TriggerServerEvent('cnr:requestAdminLiveMapData', requestId)
+end)
+
+RegisterNUICallback('createCadCall', function(data, cb)
+    TriggerServerEvent(
+        'cnr:createCadCall',
+        tostring(data and data.title or ""),
+        tostring(data and data.details or ""),
+        tostring(data and data.priority or "Medium"),
+        data and data.requestBackup == true,
+        data and data.urgent == true
+    )
+    cb({ success = true })
+end)
+
+RegisterNUICallback('updateCadCallStatus', function(data, cb)
+    TriggerServerEvent(
+        'cnr:updateCadCallStatus',
+        tonumber(data and data.callId),
+        tostring(data and data.status or ""),
+        tostring(data and data.details or "")
+    )
+    cb({ success = true })
+end)
+
+RegisterNUICallback('issuePoliceCitation', function(data, cb)
+    TriggerServerEvent(
+        'cnr:issuePoliceCitation',
+        tonumber(data and data.targetId),
+        tostring(data and data.citationId or ""),
+        tonumber(data and data.amount) or 0
+    )
+    cb({ success = true })
+end)
+
+RegisterNUICallback('sendRoleTextMessage', function(data, cb)
+    TriggerServerEvent(
+        'cnr:sendRoleTextMessage',
+        tonumber(data and data.targetId),
+        tostring(data and data.message or "")
+    )
+    cb({ success = true })
+end)
+
 RegisterNUICallback('getRobberStatus', function(data, cb)
     cb({
         success = true,
@@ -5611,6 +5836,11 @@ end)
 
 RegisterNUICallback('findHideout', function(data, cb)
     TriggerEvent('cnr:findHideout')
+    cb({ success = true })
+end)
+
+RegisterNUICallback('requestRobberAssistance', function(data, cb)
+    TriggerServerEvent('cnr:requestRobberAssistance', data and data.urgent == true)
     cb({ success = true })
 end)
 

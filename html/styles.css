@@ -1263,6 +1263,370 @@ button:hover {
 #admin-confirm-ban-btn:hover { background: linear-gradient(to right, #ff7675, #e94560); }
 #admin-cancel-ban-btn:hover { background: #1f4e79; }
 
+/* Refined admin layout and shared live-map surface */
+#admin-panel {
+    width: min(1440px, 96vw);
+    max-height: 90vh;
+    padding: 24px 28px;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(79, 140, 255, 0.16), transparent 28%),
+        linear-gradient(165deg, rgba(7, 12, 24, 0.98) 0%, rgba(14, 23, 41, 0.97) 54%, rgba(8, 12, 24, 0.99) 100%);
+    border: 1px solid rgba(79, 140, 255, 0.24);
+    box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+#admin-panel h1 {
+    text-align: left;
+    margin-bottom: 16px;
+}
+
+#admin-panel > h2 {
+    text-align: left;
+    margin: 18px 0 12px;
+    color: #dbe7ff;
+    font-size: 1.05rem;
+}
+
+.admin-controls {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.admin-live-map-card {
+    padding: 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03));
+}
+
+.admin-live-map-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 14px;
+}
+
+.admin-live-map-header h2 {
+    margin: 0;
+    text-align: left !important;
+}
+
+.admin-live-map-header p {
+    margin: 6px 0 0;
+    color: rgba(225, 234, 248, 0.66);
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+
+.admin-player-list-container {
+    max-height: 30vh;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+#admin-panel table {
+    font-size: 13px;
+}
+
+#admin-panel th,
+#admin-panel td {
+    border-color: rgba(79, 140, 255, 0.16);
+}
+
+#admin-panel th {
+    background: rgba(79, 140, 255, 0.18);
+}
+
+.live-map-filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.live-map-filter-btn {
+    min-width: 86px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: #eef4ff;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.live-map-filter-btn:hover,
+.live-map-filter-btn.active {
+    transform: translateY(-1px);
+    background: rgba(79, 140, 255, 0.18);
+    border-color: rgba(79, 140, 255, 0.36);
+}
+
+.live-map-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.95fr);
+    gap: 16px;
+    align-items: stretch;
+}
+
+.live-map-canvas {
+    position: relative;
+    min-height: 320px;
+}
+
+.live-map-stage {
+    position: relative;
+    width: 100%;
+    min-height: 320px;
+    aspect-ratio: 1126.69 / 600;
+    overflow: hidden;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(180deg, rgba(7, 12, 24, 0.12), rgba(7, 12, 24, 0.6)),
+        url('assets/gta-live-map-bg.jpg') center center / cover no-repeat;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.live-map-grid {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 10% 10%;
+    pointer-events: none;
+}
+
+.live-map-zone {
+    position: absolute;
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75);
+    pointer-events: none;
+}
+
+.live-map-zone--paleto { left: 13%; top: 10%; }
+.live-map-zone--grape { left: 58%; top: 18%; }
+.live-map-zone--sandy { left: 53%; top: 36%; }
+.live-map-zone--vinewood { left: 41%; top: 63%; }
+.live-map-zone--downtown { left: 49%; top: 77%; }
+.live-map-zone--vespucci { left: 27%; top: 85%; }
+
+.live-map-status-bar {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(7, 12, 24, 0.68);
+    color: rgba(243, 247, 255, 0.88);
+    font-size: 0.82rem;
+    font-weight: 600;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.live-map-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+    padding: 24px;
+    background: rgba(7, 12, 24, 0.52);
+}
+
+.live-map-empty-state h3 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 1.1rem;
+}
+
+.live-map-empty-state p {
+    margin: 0;
+    max-width: 320px;
+    color: rgba(233, 240, 250, 0.74);
+    line-height: 1.45;
+}
+
+.live-map-marker {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px 3px 4px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(7, 12, 24, 0.74);
+    color: #ffffff;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.live-map-marker:hover,
+.live-map-marker.is-active {
+    transform: translate(-50%, -50%) scale(1.04);
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.42);
+}
+
+.live-map-marker-core {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14);
+}
+
+.live-map-marker-tag {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.live-map-marker--cop .live-map-marker-core { background: #60a5fa; }
+.live-map-marker--cop { background: rgba(30, 64, 175, 0.9); }
+.live-map-marker--robber .live-map-marker-core { background: #fb7185; }
+.live-map-marker--robber { background: rgba(190, 24, 93, 0.9); }
+.live-map-marker--civilian .live-map-marker-core { background: #cbd5e1; }
+.live-map-marker--civilian { background: rgba(51, 65, 85, 0.9); }
+.live-map-marker--call .live-map-marker-core {
+    background: #facc15;
+    border-radius: 2px;
+    transform: rotate(45deg);
+}
+.live-map-marker--call { background: rgba(161, 98, 7, 0.92); }
+.live-map-marker--suspect .live-map-marker-core { background: #f97316; }
+.live-map-marker--suspect { background: rgba(154, 52, 18, 0.92); }
+
+.live-map-details {
+    min-height: 320px;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(13, 20, 35, 0.96), rgba(8, 13, 24, 0.98));
+    color: #f7fbff;
+}
+
+.live-map-details-empty,
+.live-map-detail-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+}
+
+.live-map-detail-kicker {
+    margin: 0;
+    color: rgba(191, 219, 254, 0.8);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.live-map-detail-card h3,
+.live-map-details-empty h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #ffffff;
+}
+
+.live-map-detail-subtitle,
+.live-map-details-empty p {
+    margin: 0;
+    color: rgba(226, 234, 247, 0.72);
+    line-height: 1.5;
+}
+
+.live-map-detail-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.live-map-detail-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+    min-height: 28px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(245, 248, 255, 0.9);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.live-map-detail-chip--cop { background: rgba(59, 130, 246, 0.18); color: #bfdbfe; }
+.live-map-detail-chip--robber { background: rgba(244, 63, 94, 0.18); color: #fecdd3; }
+.live-map-detail-chip--civilian { background: rgba(148, 163, 184, 0.18); color: #e2e8f0; }
+.live-map-detail-chip--warning { background: rgba(251, 191, 36, 0.18); color: #fde68a; }
+.live-map-detail-chip--danger { background: rgba(248, 113, 113, 0.18); color: #fecaca; }
+
+.live-map-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.live-map-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(223, 232, 245, 0.74);
+    font-size: 0.86rem;
+}
+
+.live-map-detail-row strong {
+    color: #ffffff;
+    text-align: right;
+}
+
+.live-map-detail-meta {
+    margin: auto 0 0;
+    color: rgba(203, 213, 225, 0.62);
+    font-size: 0.8rem;
+}
+
+.role-live-map-card .role-card-heading {
+    margin-bottom: 12px;
+}
+
+@media (max-width: 1120px) {
+    .live-map-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .live-map-details {
+        min-height: 0;
+    }
+
+    .admin-live-map-header {
+        flex-direction: column;
+    }
+}
+
 .hidden {
     display: none !important; /* Ensure hidden class works */
 }
@@ -2511,161 +2875,430 @@ body::before {
 }
 
 /* =========================================================================
-   Robber Menu Styles
+   Police / Robber Role Menus
    ========================================================================== */
 
-#robber-menu {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 400px;
-    background-color: rgba(20, 20, 20, 0.9);
-    border: 2px solid #bf1e2d; /* Robber red */
-    border-radius: 10px;
-    color: white;
-    padding: 20px;
-    z-index: 1000;
-    animation: fadeInMenu 0.3s ease-out;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-}
-
-#robber-menu.hidden {
-    display: none;
-}
-
-#robber-menu .menu-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    border-bottom: 1px solid #bf1e2d;
-    padding-bottom: 10px;
-}
-
-#robber-menu h1 {
-    margin: 0;
-    font-size: 24px;
-    text-transform: uppercase;
-    color: #bf1e2d;
-    text-shadow: 0 0 5px rgba(191, 30, 45, 0.5);
-}
-
-#robber-menu .close-btn {
-    background: none;
-    border: none;
-    color: #bf1e2d;
-    font-size: 20px;
-    cursor: pointer;
-    transition: color 0.2s;
-}
-
-#robber-menu .close-btn:hover {
-    color: #ff3040;
-}
-
-#robber-menu .menu-options {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-#robber-menu .menu-btn {
-    background-color: rgba(40, 40, 40, 0.8);
-    border: 1px solid #bf1e2d;
-    border-radius: 5px;
-    color: white;
-    padding: 12px 15px;
-    text-align: left;
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-}
-
-#robber-menu .menu-btn:hover {
-    background-color: rgba(60, 60, 60, 0.8);
-    border-color: #ff3040;
-    transform: translateX(5px);
-}
-
-#robber-menu .menu-btn .icon {
-    font-size: 20px;
-    margin-right: 10px;
-}
-
-#police-menu,
 .role-action-menu {
+    --role-accent: #4f8cff;
+    --role-accent-strong: #8fb7ff;
+    --role-accent-soft: rgba(79, 140, 255, 0.18);
+    --role-border: rgba(79, 140, 255, 0.32);
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(440px, calc(100vw - 32px));
-    background-color: rgba(20, 20, 20, 0.94);
-    border: 2px solid #2563eb;
-    border-radius: 10px;
-    color: white;
-    padding: 20px;
+    width: min(1220px, 94vw);
+    max-height: min(88vh, 920px);
+    padding: 28px;
+    overflow: auto;
+    border-radius: 28px;
+    border: 1px solid var(--role-border);
+    color: #f8fbff;
+    background:
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.09), transparent 32%),
+        radial-gradient(circle at top left, var(--role-accent-soft), transparent 36%),
+        linear-gradient(155deg, rgba(7, 12, 24, 0.97) 0%, rgba(11, 18, 31, 0.96) 54%, rgba(5, 9, 18, 0.98) 100%);
+    box-shadow:
+        0 28px 90px rgba(0, 0, 0, 0.58),
+        0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+        0 0 40px rgba(0, 0, 0, 0.24) inset;
     z-index: 1000;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    animation: fadeInMenu 0.22s ease-out;
 }
 
-#police-menu .menu-header,
-.role-action-menu .menu-header {
+.role-action-menu--police {
+    --role-accent: #4f8cff;
+    --role-accent-strong: #d8e7ff;
+    --role-accent-soft: rgba(79, 140, 255, 0.18);
+    --role-border: rgba(79, 140, 255, 0.34);
+}
+
+.role-action-menu--robber {
+    --role-accent: #ff6677;
+    --role-accent-strong: #ffd6dc;
+    --role-accent-soft: rgba(255, 102, 119, 0.18);
+    --role-border: rgba(255, 102, 119, 0.32);
+}
+
+.role-action-menu .role-menu-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    border-bottom: 1px solid rgba(37, 99, 235, 0.65);
-    padding-bottom: 10px;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-#police-menu .menu-options,
-.role-action-menu .menu-options {
+.role-action-menu .role-menu-kicker {
+    margin: 0 0 8px;
+    color: var(--role-accent-strong);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.role-action-menu h1 {
+    margin: 0;
+    font-size: clamp(2rem, 2.7vw, 2.7rem);
+    line-height: 1;
+}
+
+.role-action-menu .role-menu-subtitle {
+    margin: 10px 0 0;
+    max-width: 760px;
+    color: rgba(235, 241, 255, 0.72);
+    font-size: 0.98rem;
+    line-height: 1.55;
+}
+
+.role-action-menu .close-btn {
+    width: 46px;
+    height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--role-accent-strong);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.role-action-menu .close-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--role-border);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.role-action-menu .close-icon {
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.role-action-menu .role-menu-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.95fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.role-action-menu .role-menu-layout--single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.role-action-menu .role-menu-layout--single .role-menu-main {
+    max-width: 920px;
+    margin: 0 auto;
+}
+
+.role-action-menu .role-menu-main,
+.role-action-menu .role-menu-sidebar {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 18px;
 }
 
-#police-menu .menu-btn,
-.role-action-menu .menu-btn {
-    background-color: rgba(40, 40, 40, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    color: white;
-    padding: 12px 15px;
-    text-align: left;
-    font-size: 16px;
-    cursor: pointer;
+.role-action-menu .role-card {
+    padding: 20px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+        rgba(7, 12, 24, 0.66);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.role-action-menu .role-card-heading {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 14px;
 }
 
-.menu-inline-form {
+.role-action-menu .role-card h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    color: #f8fbff;
+}
+
+.role-action-menu .role-card-heading p {
+    margin: 6px 0 0;
+    color: rgba(225, 232, 247, 0.62);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.role-action-menu .role-action-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.role-action-menu .menu-btn {
+    width: 100%;
+    justify-content: center;
     gap: 10px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+    color: #f8fbff;
+    font-size: 0.97rem;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
-.menu-inline-form input {
+.role-action-menu .menu-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--role-border);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.06));
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.role-action-menu .menu-btn .icon {
+    font-size: 1.05rem;
+}
+
+.role-action-menu .menu-inline-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.role-action-menu .menu-inline-form--compact {
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px);
+}
+
+.role-action-menu .menu-inline-form--citation {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(170px, 220px);
+}
+
+.role-action-menu .menu-inline-form--cad {
+    grid-template-columns: minmax(140px, 180px) repeat(2, minmax(120px, 160px)) minmax(190px, 240px);
+    align-items: center;
+}
+
+.role-action-menu .menu-inline-form input,
+.role-action-menu .menu-inline-form select {
     min-width: 0;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    color: white;
-    padding: 12px;
+    height: 52px;
+    padding: 0 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.05);
+    color: #f8fbff;
+    font-size: 0.95rem;
+    outline: none;
 }
 
-.menu-result {
-    min-height: 20px;
-    padding: 10px 12px;
-    border-radius: 6px;
+.role-action-menu .menu-inline-form input::placeholder {
+    color: rgba(255, 255, 255, 0.38);
+}
+
+.role-action-menu .menu-inline-form select option {
+    color: #101820;
+}
+
+.role-action-menu .menu-toggle {
+    height: 52px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
     background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.82);
-    font-size: 13px;
-    line-height: 1.4;
+    color: rgba(245, 247, 252, 0.88);
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.role-action-menu .menu-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--role-accent);
+}
+
+.role-action-menu .menu-result {
+    min-height: 58px;
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(240, 245, 255, 0.82);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.role-action-menu .role-status-panel {
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.role-action-menu .role-scroll-section {
+    min-height: 0;
+}
+
+.role-action-menu .dispatch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 230px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.role-action-menu .dispatch-card {
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(18, 28, 46, 0.88), rgba(11, 18, 31, 0.86));
+}
+
+.role-action-menu .dispatch-card--call {
+    background:
+        linear-gradient(180deg, rgba(21, 36, 63, 0.9), rgba(12, 22, 40, 0.88)),
+        rgba(10, 18, 32, 0.9);
+}
+
+.role-action-menu .dispatch-card--empty {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.role-action-menu .dispatch-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.role-action-menu .dispatch-card-title {
+    margin: 0;
+    font-size: 0.98rem;
+    color: #ffffff;
+}
+
+.role-action-menu .dispatch-card-subtitle {
+    margin: 6px 0 0;
+    color: rgba(214, 224, 241, 0.64);
+    font-size: 0.83rem;
+}
+
+.role-action-menu .dispatch-card-body {
+    margin: 12px 0 0;
+    color: rgba(236, 241, 250, 0.84);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.role-action-menu .dispatch-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.role-action-menu .dispatch-chip,
+.role-action-menu .dispatch-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(247, 250, 255, 0.88);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.role-action-menu .dispatch-chip--warning {
+    background: rgba(251, 191, 36, 0.16);
+    color: #fcd34d;
+}
+
+.role-action-menu .dispatch-chip--danger,
+.role-action-menu .dispatch-pill--danger {
+    background: rgba(248, 113, 113, 0.18);
+    color: #fda4af;
+}
+
+.role-action-menu .dispatch-pill--low {
+    background: rgba(125, 211, 252, 0.16);
+    color: #93c5fd;
+}
+
+.role-action-menu .dispatch-pill--medium {
+    background: rgba(74, 222, 128, 0.16);
+    color: #86efac;
+}
+
+.role-action-menu .dispatch-pill--high {
+    background: rgba(251, 191, 36, 0.16);
+    color: #fcd34d;
+}
+
+.role-action-menu .dispatch-pill--critical {
+    background: rgba(248, 113, 113, 0.18);
+    color: #fda4af;
+}
+
+.role-action-menu .dispatch-action-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+@media (max-width: 1180px) {
+    .role-action-menu .role-menu-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .role-action-menu .role-menu-sidebar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+}
+
+@media (max-width: 860px) {
+    .role-action-menu {
+        width: min(98vw, 980px);
+        max-height: 92vh;
+        padding: 20px;
+        border-radius: 22px;
+    }
+
+    .role-action-menu .role-menu-header {
+        gap: 16px;
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+    }
+
+    .role-action-menu .menu-inline-form,
+    .role-action-menu .menu-inline-form--compact,
+    .role-action-menu .menu-inline-form--citation,
+    .role-action-menu .menu-inline-form--cad,
+    .role-action-menu .dispatch-action-row {
+        grid-template-columns: 1fr;
+    }
+
+    .role-action-menu .role-action-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .role-action-menu .role-menu-sidebar {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ==========================================================================

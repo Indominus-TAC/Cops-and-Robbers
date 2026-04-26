@@ -44,6 +44,8 @@ local activeSpikeStrips = {} -- To manage strip IDs and removal: {stripId = {cop
 local nextSpikeStripId = 1
 local droppedWorldItems = {}
 local nextDroppedWorldItemId = 1
+local activeCadCalls = _G.activeCadCalls or {}
+local nextCadCallId = _G.nextCadCallId or 1
 
 _G.playersData = playersData
 _G.copsOnDuty = copsOnDuty
@@ -56,6 +58,8 @@ _G.bannedPlayers = bannedPlayers
 _G.k9Engagements = k9Engagements
 _G.activeBounties = activeBounties
 _G.playerDeployedSpikeStripsCount = playerDeployedSpikeStripsCount
+_G.activeCadCalls = activeCadCalls
+_G.nextCadCallId = nextCadCallId
 
 -- ====================================================================
 -- Get Player Role Handler
@@ -2396,6 +2400,74 @@ local function BuildAdminPlayerList()
     return onlinePlayers
 end
 
+local function BuildAdminLiveMapPlayerSnapshot(playerId)
+    local targetId = tonumber(playerId)
+    if not targetId or targetId <= 0 then
+        return nil
+    end
+
+    local targetData = GetCnrPlayerData(targetId) or {}
+    local ped = GetPlayerPed(targetId)
+    local coords = nil
+    local trackedEntity = nil
+    local speedMph = 0
+    local vehicleType = nil
+    local vehicleModel = nil
+    local equipped = "Unarmed"
+
+    if ped and ped ~= 0 and DoesEntityExist(ped) then
+        coords = GetEntityCoords(ped)
+        trackedEntity = ped
+        equipped = GetWeaponLabelFromPed(ped)
+
+        if IsPedInAnyVehicle(ped, false) then
+            trackedEntity = GetVehiclePedIsIn(ped, false)
+            vehicleType, vehicleModel = GetVehicleTypeLabel(trackedEntity)
+        end
+
+        speedMph = math.floor(((GetEntitySpeed(trackedEntity) or 0.0) * 2.236936) + 0.5)
+    end
+
+    local wantedData = wantedPlayers[targetId] or {}
+    local bountyData = activeBounties[targetId]
+
+    return {
+        serverId = targetId,
+        name = SafeGetPlayerName(targetId) or ("Player " .. tostring(targetId)),
+        role = targetData.role or "citizen",
+        level = tonumber(targetData.level) or 1,
+        cash = tonumber(targetData.money) or 0,
+        coords = CloneVectorCoords(coords),
+        equipped = equipped,
+        vehicleType = vehicleType,
+        vehicleModel = vehicleModel,
+        speedMph = speedMph,
+        wantedLevel = tonumber(wantedData.wantedLevel) or 0,
+        wantedStars = tonumber(wantedData.stars) or 0,
+        bounty = bountyData and tonumber(bountyData.amount) or 0
+    }
+end
+
+local function BuildAdminLiveMapPayload()
+    local payload = {
+        players = {},
+        generatedAt = os.time()
+    }
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local snapshot = BuildAdminLiveMapPlayerSnapshot(playerId)
+        if snapshot then
+            payload.players[#payload.players + 1] = snapshot
+        end
+    end
+
+    table.sort(payload.players, function(a, b)
+        return (a.serverId or 0) < (b.serverId or 0)
+    end)
+
+    return payload
+end
+
 local function ApplyBanToPlayer(targetId, reason, adminName)
     local targetPlayerId = tonumber(targetId)
     if not targetPlayerId or targetPlayerId <= 0 then
@@ -3224,7 +3296,7 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
     end
     
     if IsPlayerAdmin(playerId) then
-        TriggerClientEvent('cnr:showAdminPanel', playerId, BuildAdminPlayerList())
+        TriggerClientEvent('cnr:showAdminPanel', playerId, BuildAdminPlayerList(), BuildAdminLiveMapPayload())
         Log(string.format("Admin panel opened for player %s", playerId), "info", "CNR_SERVER")
     else
         if pData.role == "cop" then
@@ -3234,6 +3306,29 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
         else
             SafeTriggerClientEvent('cnr:showNotification', playerId, "~r~No special menu available for your role.")
         end
+    end
+end))
+
+RegisterServerEvent('cnr:openRoleActionMenu')
+RegisterNetEvent('cnr:openRoleActionMenu')
+AddEventHandler('cnr:openRoleActionMenu', SecurityEnhancements.SecureEventHandler('cnr:openRoleActionMenu', function(playerId)
+    local src = tonumber(source) or tonumber(playerId)
+    if not src or src <= 0 then
+        return
+    end
+
+    local pData = GetCnrPlayerData(src)
+    if not pData then
+        Log(string.format("Role menu request failed - no player data for %s", src), "warn", "CNR_SERVER")
+        return
+    end
+
+    if pData.role == "cop" then
+        TriggerClientEvent('cnr:showPoliceMenu', src)
+    elseif pData.role == "robber" then
+        TriggerClientEvent('cnr:showRobberMenu', src)
+    else
+        SafeTriggerClientEvent('cnr:showNotification', src, "~r~No role action menu is available for your current role.")
     end
 end))
 
@@ -3855,8 +3950,242 @@ AddEventHandler('cnr:getBankingDetails', function()
     SendBankingDetails(src)
 end)
 
+local function CloneVectorCoords(coords)
+    if not coords then
+        return nil
+    end
+
+    return {
+        x = coords.x,
+        y = coords.y,
+        z = coords.z
+    }
+end
+
+local function GetPoliceRankLabel(level)
+    local normalizedLevel = tonumber(level) or 1
+    if normalizedLevel >= 45 then return "Chief" end
+    if normalizedLevel >= 35 then return "Captain" end
+    if normalizedLevel >= 25 then return "Lieutenant" end
+    if normalizedLevel >= 15 then return "Sergeant" end
+    if normalizedLevel >= 10 then return "Senior Officer" end
+    if normalizedLevel >= 5 then return "Officer" end
+    return "Cadet"
+end
+
+local function GetVehicleTypeLabel(vehicle)
+    if not vehicle or vehicle == 0 then
+        return nil, nil
+    end
+
+    local vehicleClass = type(GetVehicleClass) == "function" and GetVehicleClass(vehicle) or nil
+    local vehicleType = "Vehicle"
+    if vehicleClass == 14 then
+        vehicleType = "Boat"
+    elseif vehicleClass == 15 then
+        vehicleType = "Helicopter"
+    elseif vehicleClass == 16 then
+        vehicleType = "Plane"
+    elseif vehicleClass == 8 then
+        vehicleType = "Motorcycle"
+    end
+
+    local modelName = tostring(GetEntityModel(vehicle))
+    if type(GetDisplayNameFromVehicleModel) == "function" then
+        local displayName = GetDisplayNameFromVehicleModel(GetEntityModel(vehicle))
+        if displayName and displayName ~= "" then
+            modelName = displayName
+        end
+    end
+
+    return vehicleType, modelName
+end
+
+local function GetWeaponLabelFromPed(ped)
+    if not ped or ped == 0 or type(GetSelectedPedWeapon) ~= "function" then
+        return "Unarmed"
+    end
+
+    local weaponHash = GetSelectedPedWeapon(ped)
+    if not weaponHash or weaponHash == 0 then
+        return "Unarmed"
+    end
+
+    return tostring(weaponHash)
+end
+
+local function BuildOfficerCadSnapshot(officerId)
+    local pData = GetCnrPlayerData(officerId)
+    local ped = GetPlayerPed(officerId)
+    local coords = (ped and ped ~= 0 and DoesEntityExist(ped)) and GetEntityCoords(ped) or nil
+    local speedMph = 0
+    local vehicleType = nil
+    local vehicleModel = nil
+
+    if ped and ped ~= 0 and DoesEntityExist(ped) then
+        local trackedEntity = ped
+        if IsPedInAnyVehicle(ped, false) then
+            trackedEntity = GetVehiclePedIsIn(ped, false)
+            vehicleType, vehicleModel = GetVehicleTypeLabel(trackedEntity)
+        end
+
+        speedMph = math.floor(((GetEntitySpeed(trackedEntity) or 0.0) * 2.236936) + 0.5)
+    end
+
+    return {
+        serverId = officerId,
+        name = SafeGetPlayerName(officerId) or ("Officer " .. tostring(officerId)),
+        role = pData and pData.role or "cop",
+        level = tonumber(pData and pData.level) or 1,
+        rank = GetPoliceRankLabel(pData and pData.level),
+        coords = CloneVectorCoords(coords),
+        equipped = GetWeaponLabelFromPed(ped),
+        vehicleType = vehicleType,
+        vehicleModel = vehicleModel,
+        speedMph = speedMph
+    }
+end
+
+local function BuildCadCallSnapshot(callId, callData)
+    return {
+        id = callId,
+        title = callData.title or ("Call #" .. tostring(callId)),
+        details = callData.details or "",
+        priority = callData.priority or "Medium",
+        status = callData.status or "Open",
+        createdBy = callData.createdBy,
+        createdByName = callData.createdByName,
+        updatedBy = callData.updatedBy,
+        updatedByName = callData.updatedByName,
+        requestBackup = callData.requestBackup == true,
+        urgent = callData.urgent == true,
+        createdAt = callData.createdAt,
+        updatedAt = callData.updatedAt,
+        coords = CloneVectorCoords(callData.coords)
+    }
+end
+
+local function BuildWantedCadSnapshot()
+    local suspects = {}
+    for suspectId, wantedData in pairs(wantedPlayers) do
+        local suspectPlayerId = tonumber(suspectId)
+        if suspectPlayerId and SafeGetPlayerName(suspectPlayerId) ~= nil and (wantedData.stars or 0) > 0 then
+            local ped = GetPlayerPed(suspectPlayerId)
+            local coords = ped and ped ~= 0 and DoesEntityExist(ped) and GetEntityCoords(ped) or nil
+            table.insert(suspects, {
+                playerId = suspectPlayerId,
+                name = SafeGetPlayerName(suspectPlayerId) or ("Player " .. tostring(suspectPlayerId)),
+                wantedLevel = wantedData.wantedLevel or 0,
+                wantedStars = wantedData.stars or 0,
+                bounty = activeBounties[suspectPlayerId] and activeBounties[suspectPlayerId].amount or 0,
+                coords = CloneVectorCoords(coords)
+            })
+        end
+    end
+
+    table.sort(suspects, function(a, b)
+        return (a.wantedStars or 0) > (b.wantedStars or 0)
+    end)
+
+    return suspects
+end
+
+local function BuildPoliceCadPayload()
+    local payload = {
+        officers = {},
+        calls = {},
+        suspects = BuildWantedCadSnapshot(),
+        generatedAt = os.time()
+    }
+
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            table.insert(payload.officers, BuildOfficerCadSnapshot(copId))
+        end
+    end
+
+    for callId, callData in pairs(activeCadCalls) do
+        payload.calls[#payload.calls + 1] = BuildCadCallSnapshot(callId, callData)
+    end
+
+    table.sort(payload.officers, function(a, b)
+        return (a.serverId or 0) < (b.serverId or 0)
+    end)
+    table.sort(payload.calls, function(a, b)
+        return (b.updatedAt or 0) > (a.updatedAt or 0)
+    end)
+
+    return payload
+end
+
+local function PushPoliceCadUpdate(targetPlayerId)
+    local cadPayload = BuildPoliceCadPayload()
+
+    if targetPlayerId then
+        TriggerClientEvent('cnr:receivePoliceCadData', targetPlayerId, false, cadPayload, Config.CitationReasons or {})
+        return
+    end
+
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            TriggerClientEvent('cnr:receivePoliceCadData', copId, false, cadPayload, Config.CitationReasons or {})
+        end
+    end
+end
+
+local function BroadcastPoliceDispatchUpdate(message)
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            TriggerClientEvent('cnr:showNotification', copId, message, 'warning')
+        end
+    end
+end
+
+local function CreateCadCall(creatorId, title, details, priority, requestBackup, urgent, coords)
+    local callId = nextCadCallId
+    nextCadCallId = nextCadCallId + 1
+    _G.nextCadCallId = nextCadCallId
+
+    activeCadCalls[callId] = {
+        title = title,
+        details = details,
+        priority = priority,
+        status = "Open",
+        createdBy = creatorId,
+        createdByName = SafeGetPlayerName(creatorId) or ("Officer " .. tostring(creatorId)),
+        updatedBy = creatorId,
+        updatedByName = SafeGetPlayerName(creatorId) or ("Officer " .. tostring(creatorId)),
+        requestBackup = requestBackup == true,
+        urgent = urgent == true,
+        createdAt = os.time(),
+        updatedAt = os.time(),
+        coords = coords
+    }
+
+    return callId
+end
+
+local function UpdateCadCall(callId, officerId, newStatus, details)
+    local cadCall = activeCadCalls[callId]
+    if not cadCall then
+        return false
+    end
+
+    if newStatus and newStatus ~= "" then
+        cadCall.status = newStatus
+    end
+    if details ~= nil and details ~= "" then
+        cadCall.details = details
+    end
+
+    cadCall.updatedAt = os.time()
+    cadCall.updatedBy = officerId
+    cadCall.updatedByName = SafeGetPlayerName(officerId) or ("Officer " .. tostring(officerId))
+    return true
+end
+
 RegisterNetEvent('cnr:requestPoliceAssistance')
-AddEventHandler('cnr:requestPoliceAssistance', function()
+AddEventHandler('cnr:requestPoliceAssistance', function(isUrgent)
     local src = tonumber(source)
     local pData = GetCnrPlayerData(src)
     if not pData or pData.role ~= "cop" then
@@ -3866,20 +4195,130 @@ AddEventHandler('cnr:requestPoliceAssistance', function()
 
     local officerCoords = GetEntityCoords(GetPlayerPed(src))
     local officerName = SafeGetPlayerName(src) or ("Officer " .. tostring(src))
+    local urgent = isUrgent == true
+    local priority = urgent and "Critical" or "High"
+    local callId = CreateCadCall(
+        src,
+        urgent and "10-99 Officer Needs Immediate Backup" or "Officer Assistance Requested",
+        string.format("%s requested %sbackup at current location.", officerName, urgent and "immediate " or ""),
+        priority,
+        true,
+        urgent,
+        officerCoords
+    )
 
     for _, playerId in ipairs(GetPlayers()) do
         local targetId = tonumber(playerId)
         local targetData = GetCnrPlayerData(targetId)
         if targetData and targetData.role == "cop" then
             TriggerClientEvent('cnr:policeAlert', targetId, {
-                type = "Officer Assistance Requested",
+                type = urgent and "10-99 Officer Needs Immediate Backup" or "Officer Assistance Requested",
                 location = officerCoords,
                 suspect = officerName
             })
         end
     end
 
+    BroadcastPoliceDispatchUpdate(string.format("CAD updated: %s opened call #%d.", officerName, callId))
+    PushPoliceCadUpdate()
     TriggerClientEvent('cnr:showNotification', src, 'Assistance request sent to on-duty cops', 'success')
+end)
+
+RegisterNetEvent('cnr:requestPoliceCadData')
+AddEventHandler('cnr:requestPoliceCadData', function(requestId)
+    local src = tonumber(source)
+    local officerData = GetCnrPlayerData(src)
+    if not officerData or officerData.role ~= "cop" then
+        TriggerClientEvent('cnr:receivePoliceCadData', src, requestId, {
+            officers = {},
+            calls = {},
+            suspects = {},
+            generatedAt = os.time()
+        }, Config.CitationReasons or {})
+        return
+    end
+
+    TriggerClientEvent('cnr:receivePoliceCadData', src, requestId, BuildPoliceCadPayload(), Config.CitationReasons or {})
+end)
+
+RegisterNetEvent('cnr:requestAdminLiveMapData')
+AddEventHandler('cnr:requestAdminLiveMapData', function(requestId)
+    local src = tonumber(source)
+    if not src or src <= 0 then
+        return
+    end
+
+    if not IsPlayerAdmin(src) then
+        TriggerClientEvent('cnr:receiveAdminLiveMapData', src, requestId, {
+            players = {},
+            generatedAt = os.time()
+        })
+        return
+    end
+
+    TriggerClientEvent('cnr:receiveAdminLiveMapData', src, requestId, BuildAdminLiveMapPayload())
+end)
+
+RegisterNetEvent('cnr:createCadCall')
+AddEventHandler('cnr:createCadCall', function(title, details, priority, requestBackup, urgent)
+    local src = tonumber(source)
+    local officerData = GetCnrPlayerData(src)
+    if not officerData or officerData.role ~= "cop" then
+        TriggerClientEvent('cnr:showNotification', src, 'Only cops can create CAD calls.', 'error')
+        return
+    end
+
+    local sanitizedTitle = tostring(title or ""):sub(1, 80)
+    local sanitizedDetails = tostring(details or ""):sub(1, 240)
+    if sanitizedTitle == "" then
+        TriggerClientEvent('cnr:showNotification', src, 'Enter a call title first.', 'error')
+        return
+    end
+
+    local normalizedPriority = "Medium"
+    for _, configuredPriority in ipairs(Config.CadSettings and Config.CadSettings.priorities or {}) do
+        if configuredPriority == priority then
+            normalizedPriority = configuredPriority
+            break
+        end
+    end
+
+    local ped = GetPlayerPed(src)
+    local coords = ped and ped ~= 0 and DoesEntityExist(ped) and GetEntityCoords(ped) or nil
+    local callId = CreateCadCall(src, sanitizedTitle, sanitizedDetails, normalizedPriority, requestBackup == true, urgent == true, coords)
+
+    BroadcastPoliceDispatchUpdate(string.format("New CAD call #%d: %s", callId, sanitizedTitle))
+    PushPoliceCadUpdate()
+    TriggerClientEvent('cnr:showNotification', src, string.format('Created CAD call #%d.', callId), 'success')
+end)
+
+RegisterNetEvent('cnr:updateCadCallStatus')
+AddEventHandler('cnr:updateCadCallStatus', function(callId, status, details)
+    local src = tonumber(source)
+    local officerData = GetCnrPlayerData(src)
+    local normalizedCallId = tonumber(callId)
+    if not officerData or officerData.role ~= "cop" then
+        TriggerClientEvent('cnr:showNotification', src, 'Only cops can update CAD calls.', 'error')
+        return
+    end
+
+    if not normalizedCallId or not activeCadCalls[normalizedCallId] then
+        TriggerClientEvent('cnr:showNotification', src, 'CAD call not found.', 'error')
+        return
+    end
+
+    local normalizedStatus = nil
+    for _, configuredStatus in ipairs(Config.CadSettings and Config.CadSettings.statuses or {}) do
+        if configuredStatus == status then
+            normalizedStatus = configuredStatus
+            break
+        end
+    end
+
+    UpdateCadCall(normalizedCallId, src, normalizedStatus, tostring(details or ""):sub(1, 240))
+    BroadcastPoliceDispatchUpdate(string.format("CAD call #%d updated to %s.", normalizedCallId, activeCadCalls[normalizedCallId].status))
+    PushPoliceCadUpdate()
+    TriggerClientEvent('cnr:showNotification', src, string.format('Updated CAD call #%d.', normalizedCallId), 'success')
 end)
 
 RegisterNetEvent('cnr:lookupRobberInfo')
@@ -3920,6 +4359,114 @@ AddEventHandler('cnr:lookupRobberInfo', function(targetId, requestId)
         jailRemaining = jailData and jailData.remainingTime or 0
     })
 end)
+
+RegisterNetEvent('cnr:sendRoleTextMessage')
+AddEventHandler('cnr:sendRoleTextMessage', function(targetId, message)
+    local src = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+    local senderData = GetCnrPlayerData(src)
+    local senderRole = senderData and senderData.role or "citizen"
+    local sanitizedMessage = tostring(message or ""):gsub("[%c]", " "):sub(1, 180)
+
+    if sanitizedMessage == "" then
+        TriggerClientEvent('cnr:showNotification', src, 'Enter a message first.', 'error')
+        return
+    end
+
+    if not targetPlayerId or targetPlayerId <= 0 or SafeGetPlayerName(targetPlayerId) == nil then
+        TriggerClientEvent('cnr:showNotification', src, 'Target player not found.', 'error')
+        return
+    end
+
+    TriggerClientEvent('cnr:receiveRoleTextMessage', targetPlayerId, {
+        fromId = src,
+        fromName = SafeGetPlayerName(src) or ("Player " .. tostring(src)),
+        fromRole = senderRole,
+        message = sanitizedMessage
+    })
+    TriggerClientEvent('cnr:showNotification', src, 'Message sent.', 'success')
+end)
+
+RegisterNetEvent('cnr:requestRobberAssistance')
+AddEventHandler('cnr:requestRobberAssistance', function(isUrgent)
+    local src = tonumber(source)
+    local robberData = GetCnrPlayerData(src)
+    if not robberData or robberData.role ~= "robber" then
+        TriggerClientEvent('cnr:showNotification', src, 'Only robbers can request criminal assistance.', 'error')
+        return
+    end
+
+    local robberName = SafeGetPlayerName(src) or ("Robber " .. tostring(src))
+    local urgent = isUrgent == true
+    for robberId, _ in pairs(robbersActive) do
+        if SafeGetPlayerName(robberId) ~= nil then
+            TriggerClientEvent('cnr:showNotification', robberId, string.format('%s requested %sbackup.', robberName, urgent and 'urgent ' or ''), 'warning')
+        end
+    end
+
+    TriggerClientEvent('cnr:showNotification', src, 'Criminal assistance request broadcasted.', 'success')
+end)
+
+RegisterNetEvent('cnr:issuePoliceCitation')
+AddEventHandler('cnr:issuePoliceCitation', function(targetId, citationId, citationAmount)
+    local src = tonumber(source)
+    local officerData = GetCnrPlayerData(src)
+    local targetPlayerId = tonumber(targetId)
+    local reasonId = tostring(citationId or "")
+    local customAmount = math.max(0, math.floor(tonumber(citationAmount) or 0))
+
+    if not officerData or officerData.role ~= "cop" then
+        TriggerClientEvent('cnr:showNotification', src, 'Only cops can issue citations.', 'error')
+        return
+    end
+
+    if not targetPlayerId or targetPlayerId <= 0 or SafeGetPlayerName(targetPlayerId) == nil then
+        TriggerClientEvent('cnr:showNotification', src, 'Target player not found.', 'error')
+        return
+    end
+
+    local citationReason = nil
+    for _, reason in ipairs(Config.CitationReasons or {}) do
+        if reason.id == reasonId then
+            citationReason = reason
+            break
+        end
+    end
+
+    if not citationReason then
+        TriggerClientEvent('cnr:showNotification', src, 'Citation reason not found.', 'error')
+        return
+    end
+
+    local finalFine = customAmount > 0 and customAmount or (tonumber(citationReason.fine) or 250)
+    if not RemovePlayerMoney(targetPlayerId, finalFine) then
+        TriggerClientEvent('cnr:showNotification', src, 'Target player cannot pay that citation right now.', 'error')
+        return
+    end
+
+    local xpAward = tonumber(citationReason.xp) or (Config.XPActionsCop and Config.XPActionsCop.speeding_fine_issued) or 8
+    AddXP(src, xpAward, "cop", "citation_" .. reasonId)
+
+    local targetName = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId))
+    TriggerClientEvent('cnr:showNotification', src, string.format('Issued %s citation to %s for $%d.', citationReason.label, targetName, finalFine), 'success')
+    TriggerClientEvent('cnr:showNotification', targetPlayerId, string.format('Citation received: %s ($%d).', citationReason.label, finalFine), 'warning')
+end)
+
+PerformanceOptimizer.CreateOptimizedLoop(function()
+    local hasOnlineCops = false
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            hasOnlineCops = true
+            break
+        end
+    end
+
+    if hasOnlineCops then
+        PushPoliceCadUpdate()
+    end
+
+    return true
+end, (Config.CadSettings and Config.CadSettings.refreshIntervalMs) or 5000, 30000, 3)
 
 -- Banking interest and loan processing (runs every hour)
 function ProcessBankingInterest()

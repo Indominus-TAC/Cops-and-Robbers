@@ -1089,7 +1089,7 @@ Config.CharacterEditor = {
 
 -- Keybind Layout Summary:
 -- M: Open Inventory | E: Interact | LEFT ALT: Police Radar | H: Fine Driver
--- G: Deploy Spikes | K: Toggle K9 | F1: EMP Device | F12: Admin Panel | F3: Character Editor
+-- G: Deploy Spikes | K: Toggle K9 | F1: EMP Device | F11: Police/Robber Menu | F12: Admin Panel | F3: Character Editor
 
 -- See FiveM native docs for control list: https://docs.fivem.net/docs/game-references/controls/
 Config.Keybinds = {
@@ -1101,6 +1101,8 @@ Config.Keybinds = {
     toggleK9            = 311, -- INPUT_REPLAY_SHOWHOTKEY (K) - Correct for K key
     commandK9Attack     = 51,  -- INPUT_CONTEXT (E) - Alternative context action
     activateEMP         = 288, -- INPUT_REPLAY_START_STOP_RECORDING (F1) - Better key for EMP
+    openRoleMenu        = 344, -- INPUT_FRONTEND_SOCIAL_CLUB_SECONDARY (F11) - Role action menu
+    openRoleMenuKey     = "F11",
     toggleAdminPanel    = 289, -- Legacy control fallback. Admin panel now uses RegisterKeyMapping.
     toggleAdminPanelKey = "F12",
     openCharacterEditor = 170, -- INPUT_REPLAY_RECORD (F3) - Character editor
@@ -1984,6 +1986,8 @@ Config.SpeedLimitMph = 60.0
 
 -- Keybind configurations
 Config.Keybinds = Config.Keybinds or {}
+Config.Keybinds.openRoleMenu = Config.Keybinds.openRoleMenu or 344
+Config.Keybinds.openRoleMenuKey = Config.Keybinds.openRoleMenuKey or "F11"
 Config.Keybinds.toggleAdminPanel = Config.Keybinds.toggleAdminPanel or 289
 Config.Keybinds.toggleAdminPanelKey = Config.Keybinds.toggleAdminPanelKey or "F12"
 Config.Keybinds.openStore = Config.Keybinds.openStore or 38
@@ -2021,6 +2025,19 @@ Config.WantedSettings = Config.WantedSettings or {}
 Config.WantedSettings.levels = Config.WantedSettings.levels or supplementalWantedLevels
 Config.WantedSettings.safehouseDecayMultiplier = tonumber(Config.WantedSettings.safehouseDecayMultiplier) or 3
 Config.WantedSettings.safehouseRadius = tonumber(Config.WantedSettings.safehouseRadius) or 65.0
+Config.CadSettings = Config.CadSettings or {
+    refreshIntervalMs = 5000,
+    priorities = { "Low", "Medium", "High", "Critical" },
+    statuses = { "Open", "En Route", "On Scene", "Resolved" }
+}
+Config.CitationReasons = Config.CitationReasons or {
+    { id = "speeding", label = "Speeding", fine = 250, xp = 8 },
+    { id = "reckless_driving", label = "Reckless Driving", fine = 500, xp = 10 },
+    { id = "illegal_firearm_use", label = "Illegal Firearm Use", fine = 900, xp = 12 },
+    { id = "evading_stop", label = "Failure To Yield", fine = 750, xp = 12 },
+    { id = "trespassing", label = "Trespassing", fine = 400, xp = 8 },
+    { id = "disorderly_conduct", label = "Disorderly Conduct", fine = 300, xp = 6 }
+}
 
 for index, fallbackLevel in ipairs(supplementalWantedLevels) do
     local configuredLevel = Config.WantedSettings.levels[index]

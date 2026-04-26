@@ -189,7 +189,7 @@ window.addEventListener('message', function(event) {
                     allowedOrigins.push(`nui://${CNRConfig.getResourceName()}`);
                 }
             }
-            showAdminPanel(data.players);
+            showAdminPanel(data.players, data.liveMapData || null);
             break;        case 'showBountyBoard':
             if (data.resourceName) {
                 CNRConfig.init(data.resourceName);
@@ -280,6 +280,12 @@ window.addEventListener('message', function(event) {
             break;
         case 'showPoliceMenu':
             showPoliceMenu(data);
+            break;
+        case 'updatePoliceCadData':
+            updatePoliceCadData(data.cadData || {}, data.citationReasons || []);
+            break;
+        case 'updateAdminLiveMapData':
+            updateAdminLiveMapData(data.liveMapData || {});
             break;
         case 'updateBankingDetails':
             if (bankingSystem) {
@@ -575,6 +581,24 @@ function showToast(message, type = 'info', duration = 3000) {
     setTimeout(() => {
         toast.style.display = 'none';
         toast.style.animation = '';    }, duration);
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatCurrencyDisplay(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return '0';
+    }
+
+    return Math.round(numericValue).toLocaleString();
 }
 
 function showRoleSelection() {
@@ -1356,15 +1380,24 @@ window.handleItemAction = handleItemAction;
 let previousCash = null;
 
 function showCashNotification(newCash, oldCash = null) {
-    const difference = oldCash !== null ? newCash - oldCash : 0;
+    const parsedNewCash = Number(newCash);
+    const parsedOldCash = oldCash === null ? null : Number(oldCash);
+
+    if (!Number.isFinite(parsedNewCash) || (oldCash !== null && !Number.isFinite(parsedOldCash))) {
+        const fallbackType = typeof oldCash === 'string' ? oldCash : 'info';
+        showToast(String(newCash ?? ''), fallbackType);
+        return;
+    }
+
+    const difference = parsedOldCash !== null ? parsedNewCash - parsedOldCash : 0;
     
     if (difference === 0) return;
     
     const notification = document.createElement('div');
     notification.className = 'cash-notification';
     notification.innerHTML = `
-        <div class="cash-amount">${difference > 0 ? '+' : ''}$${Math.abs(difference)}</div>
-        <div class="cash-total">Total: $${newCash}</div>
+        <div class="cash-amount">${difference > 0 ? '+' : ''}$${formatCurrencyDisplay(Math.abs(difference))}</div>
+        <div class="cash-total">Total: $${formatCurrencyDisplay(parsedNewCash)}</div>
     `;
     
     document.body.appendChild(notification);
@@ -1712,6 +1745,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.getElementById('admin-live-map-filters')?.addEventListener('click', function(event) {
+        const filterBtn = event.target.closest('.live-map-filter-btn');
+        if (!filterBtn) return;
+
+        adminLiveMapFilter = filterBtn.dataset.filter || 'all';
+        this.querySelectorAll('.live-map-filter-btn').forEach((button) => {
+            button.classList.toggle('active', button === filterBtn);
+        });
+        renderAdminLiveMap();
+    });
+
+    document.addEventListener('click', function(event) {
+        const marker = event.target.closest('.live-map-marker');
+        if (!marker) return;
+
+        const context = marker.dataset.mapContext;
+        const markerId = marker.dataset.markerId;
+        if (!context || !markerId) return;
+
+        liveMapSelectionByContext[context] = markerId;
+        if (context === 'admin') {
+            renderAdminLiveMap();
+        } else if (context === 'police') {
+            renderPoliceLiveMap();
+        }
+    });
+
     document.getElementById('admin-confirm-ban-btn')?.addEventListener('click', function() {
         if (currentAdminTargetPlayerId) {
             const reasonInput = document.getElementById('admin-ban-reason');
@@ -1823,8 +1883,333 @@ function formatTime(seconds) {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+const LIVE_MAP_BASE_WIDTH = 1126.69;
+const LIVE_MAP_BASE_HEIGHT = 600;
+const LIVE_MAP_X_SCALE = 0.05030;
+const LIVE_MAP_Y_SCALE = -0.05030;
+const LIVE_MAP_X_OFFSET = -486.97;
+const LIVE_MAP_Y_OFFSET = 408.9;
+
+let latestAdminLiveMapData = { players: [], generatedAt: 0 };
+let adminLiveMapRefreshInterval = null;
+let adminLiveMapFilter = 'all';
+const liveMapSelectionByContext = {
+    admin: null,
+    police: null
+};
+const liveMapMarkersByContext = {
+    admin: [],
+    police: []
+};
+
+function capitalizeLiveMapRole(role) {
+    if (role === 'cop') return 'Cop';
+    if (role === 'robber') return 'Robber';
+    if (role === 'citizen' || role === 'civilian') return 'Civilian';
+    return String(role || 'Unknown').charAt(0).toUpperCase() + String(role || 'unknown').slice(1);
+}
+
+function formatLiveMapTimestamp(timestamp) {
+    if (!timestamp) {
+        return 'Waiting for live telemetry.';
+    }
+
+    const rendered = new Date(Number(timestamp) * 1000);
+    if (Number.isNaN(rendered.getTime())) {
+        return 'Waiting for live telemetry.';
+    }
+
+    return `Updated ${rendered.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
+}
+
+function worldCoordsToLiveMapPosition(coords) {
+    if (!coords || !Number.isFinite(Number(coords.x)) || !Number.isFinite(Number(coords.y))) {
+        return null;
+    }
+
+    const pixelX = (LIVE_MAP_X_SCALE * Number(coords.x)) + LIVE_MAP_X_OFFSET;
+    const pixelY = (LIVE_MAP_Y_SCALE * Number(coords.y)) + LIVE_MAP_Y_OFFSET;
+    const left = (pixelX / LIVE_MAP_BASE_WIDTH) * 100;
+    const top = (pixelY / LIVE_MAP_BASE_HEIGHT) * 100;
+
+    if (left < -8 || left > 108 || top < -8 || top > 108) {
+        return null;
+    }
+
+    return {
+        left: Math.max(0, Math.min(100, left)),
+        top: Math.max(0, Math.min(100, top))
+    };
+}
+
+function renderLiveMapDetails(context, marker, metaText) {
+    const detailsContainer = document.getElementById(`${context}-live-map-details`);
+    if (!detailsContainer) return;
+
+    if (!marker) {
+        detailsContainer.innerHTML = `
+            <div class="live-map-details-empty">
+                <h3>No telemetry selected</h3>
+                <p>${escapeHtml(metaText || 'Select a marker to inspect a player, suspect, or active scene.')}</p>
+            </div>
+        `;
+        return;
+    }
+
+    const detailRows = (marker.detailRows || []).map((row) => `
+        <div class="live-map-detail-row">
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.value)}</strong>
+        </div>
+    `).join('');
+
+    const chips = (marker.chips || []).map((chip) => `
+        <span class="live-map-detail-chip${chip.variant ? ` live-map-detail-chip--${chip.variant}` : ''}">${escapeHtml(chip.label)}</span>
+    `).join('');
+
+    detailsContainer.innerHTML = `
+        <div class="live-map-detail-card">
+            <p class="live-map-detail-kicker">${escapeHtml(marker.kicker || 'Live telemetry')}</p>
+            <h3>${escapeHtml(marker.title || 'Unknown marker')}</h3>
+            <p class="live-map-detail-subtitle">${escapeHtml(marker.subtitle || metaText || '')}</p>
+            <div class="live-map-detail-chip-row">${chips}</div>
+            <div class="live-map-detail-grid">${detailRows}</div>
+            <p class="live-map-detail-meta">${escapeHtml(metaText || '')}</p>
+        </div>
+    `;
+}
+
+function renderLiveMapCanvas(context, markers, metaText) {
+    const canvas = document.getElementById(`${context}-live-map`);
+    if (!canvas) return;
+
+    liveMapMarkersByContext[context] = markers;
+    const positionedMarkers = markers
+        .map((marker) => {
+            const position = worldCoordsToLiveMapPosition(marker.coords);
+            return position ? { ...marker, position } : null;
+        })
+        .filter(Boolean);
+
+    if (!positionedMarkers.length) {
+        liveMapSelectionByContext[context] = null;
+        canvas.innerHTML = `
+            <div class="live-map-stage">
+                <div class="live-map-empty-state">
+                    <h3>No active telemetry on map</h3>
+                    <p>${escapeHtml(metaText || 'Players and scenes will appear here when data is available.')}</p>
+                </div>
+            </div>
+        `;
+        renderLiveMapDetails(context, null, metaText);
+        return;
+    }
+
+    if (!positionedMarkers.some((marker) => marker.id === liveMapSelectionByContext[context])) {
+        liveMapSelectionByContext[context] = positionedMarkers[0].id;
+    }
+
+    const selectedMarker = positionedMarkers.find((marker) => marker.id === liveMapSelectionByContext[context]) || positionedMarkers[0];
+    const markerHtml = positionedMarkers.map((marker) => `
+        <button
+            type="button"
+            class="live-map-marker live-map-marker--${escapeHtml(marker.markerClass || 'default')}${selectedMarker.id === marker.id ? ' is-active' : ''}"
+            data-map-context="${escapeHtml(context)}"
+            data-marker-id="${escapeHtml(marker.id)}"
+            style="left:${marker.position.left}%; top:${marker.position.top}%;"
+            title="${escapeHtml(marker.title || '')}"
+        >
+            <span class="live-map-marker-core"></span>
+            <span class="live-map-marker-tag">${escapeHtml(marker.tag || '')}</span>
+        </button>
+    `).join('');
+
+    canvas.innerHTML = `
+        <div class="live-map-stage">
+            <div class="live-map-grid"></div>
+            <div class="live-map-zone live-map-zone--paleto">Paleto Bay</div>
+            <div class="live-map-zone live-map-zone--grape">Grapeseed</div>
+            <div class="live-map-zone live-map-zone--sandy">Sandy Shores</div>
+            <div class="live-map-zone live-map-zone--vinewood">Vinewood</div>
+            <div class="live-map-zone live-map-zone--downtown">Downtown LS</div>
+            <div class="live-map-zone live-map-zone--vespucci">Vespucci</div>
+            ${markerHtml}
+            <div class="live-map-status-bar">${escapeHtml(metaText || '')}</div>
+        </div>
+    `;
+
+    renderLiveMapDetails(context, selectedMarker, metaText);
+}
+
+function buildAdminLiveMapMarkers() {
+    const filterRole = adminLiveMapFilter;
+    return (latestAdminLiveMapData.players || [])
+        .filter((player) => filterRole === 'all' || player.role === filterRole)
+        .map((player) => {
+            const vehicleLabel = player.vehicleModel
+                ? `${player.vehicleType || 'Vehicle'}: ${player.vehicleModel}`
+                : 'On foot';
+            const wantedLabel = player.wantedStars > 0
+                ? `${'★'.repeat(Math.min(player.wantedStars || 0, 5))} Heat ${player.wantedLevel || 0}`
+                : 'Clean';
+            return {
+                id: `player-${player.serverId}`,
+                tag: `#${player.serverId}`,
+                markerClass: player.role === 'cop' ? 'cop' : player.role === 'robber' ? 'robber' : 'civilian',
+                kicker: `${capitalizeLiveMapRole(player.role)} telemetry`,
+                title: `${player.name || 'Unknown'} (#${player.serverId})`,
+                subtitle: `${vehicleLabel} • ${Math.round(Number(player.speedMph) || 0)} mph`,
+                coords: player.coords,
+                chips: [
+                    { label: capitalizeLiveMapRole(player.role), variant: player.role === 'cop' ? 'cop' : player.role === 'robber' ? 'robber' : 'civilian' },
+                    { label: vehicleLabel },
+                    { label: wantedLabel, variant: (player.wantedStars || 0) > 0 ? 'warning' : '' }
+                ],
+                detailRows: [
+                    { label: 'Role', value: capitalizeLiveMapRole(player.role) },
+                    { label: 'Level', value: String(player.level || 1) },
+                    { label: 'Cash', value: `$${formatCurrencyDisplay(player.cash || 0)}` },
+                    { label: 'Speed', value: `${Math.round(Number(player.speedMph) || 0)} mph` },
+                    { label: 'Equipped', value: player.equipped || 'Unarmed' },
+                    { label: 'Vehicle', value: vehicleLabel },
+                    { label: 'Wanted', value: wantedLabel },
+                    { label: 'Coords', value: player.coords ? `${Math.floor(player.coords.x)}, ${Math.floor(player.coords.y)}` : 'Unknown' }
+                ]
+            };
+        });
+}
+
+function renderAdminLiveMap() {
+    const players = latestAdminLiveMapData.players || [];
+    const roleCounts = players.reduce((counts, player) => {
+        const roleKey = player.role || 'citizen';
+        counts[roleKey] = (counts[roleKey] || 0) + 1;
+        return counts;
+    }, {});
+    const metaText = `${formatLiveMapTimestamp(latestAdminLiveMapData.generatedAt)} • ${players.length} tracked • ${roleCounts.cop || 0} cops • ${roleCounts.robber || 0} robbers • ${roleCounts.citizen || 0} civilians`;
+    renderLiveMapCanvas('admin', buildAdminLiveMapMarkers(), metaText);
+}
+
+function buildPoliceLiveMapMarkers() {
+    const markers = [];
+
+    (latestPoliceCadData.officers || []).forEach((officer) => {
+        const vehicleLabel = officer.vehicleModel
+            ? `${officer.vehicleType || 'Vehicle'}: ${officer.vehicleModel}`
+            : 'On foot';
+        markers.push({
+            id: `officer-${officer.serverId}`,
+            tag: `P${officer.serverId}`,
+            markerClass: 'cop',
+            kicker: 'Officer telemetry',
+            title: `${officer.rank || 'Officer'} ${officer.name || 'Unknown'} (#${officer.serverId})`,
+            subtitle: `${vehicleLabel} • ${Math.round(Number(officer.speedMph) || 0)} mph`,
+            coords: officer.coords,
+            chips: [
+                { label: 'Officer', variant: 'cop' },
+                { label: vehicleLabel },
+                { label: officer.equipped || 'Unarmed' }
+            ],
+            detailRows: [
+                { label: 'Rank', value: officer.rank || 'Officer' },
+                { label: 'Level', value: String(officer.level || 1) },
+                { label: 'Speed', value: `${Math.round(Number(officer.speedMph) || 0)} mph` },
+                { label: 'Equipped', value: officer.equipped || 'Unarmed' },
+                { label: 'Vehicle', value: vehicleLabel },
+                { label: 'Coords', value: officer.coords ? `${Math.floor(officer.coords.x)}, ${Math.floor(officer.coords.y)}` : 'Unknown' }
+            ]
+        });
+    });
+
+    (latestPoliceCadData.calls || []).forEach((call) => {
+        markers.push({
+            id: `call-${call.id}`,
+            tag: `C${call.id}`,
+            markerClass: 'call',
+            kicker: 'CAD scene',
+            title: `#${call.id} ${call.title || 'Untitled Call'}`,
+            subtitle: `${call.priority || 'Medium'} • ${call.status || 'Open'}`,
+            coords: call.coords,
+            chips: [
+                { label: call.priority || 'Medium', variant: (call.priority || 'medium').toLowerCase() === 'critical' ? 'danger' : 'warning' },
+                { label: call.status || 'Open' },
+                ...(call.requestBackup ? [{ label: 'Backup requested', variant: 'warning' }] : []),
+                ...(call.urgent ? [{ label: 'ASAP', variant: 'danger' }] : [])
+            ],
+            detailRows: [
+                { label: 'Status', value: call.status || 'Open' },
+                { label: 'Priority', value: call.priority || 'Medium' },
+                { label: 'Requested By', value: call.createdByName || 'Unknown' },
+                { label: 'Backup', value: call.requestBackup ? 'Requested' : 'Not requested' },
+                { label: 'Urgency', value: call.urgent ? 'ASAP' : 'Standard' },
+                { label: 'Details', value: call.details || 'No additional notes' }
+            ]
+        });
+    });
+
+    (latestPoliceCadData.suspects || []).forEach((suspect) => {
+        const stars = (suspect.wantedStars || 0) > 0 ? '★'.repeat(Math.min(suspect.wantedStars || 0, 5)) : 'No stars';
+        markers.push({
+            id: `suspect-${suspect.playerId}`,
+            tag: `W${suspect.playerId}`,
+            markerClass: 'suspect',
+            kicker: 'Wanted suspect',
+            title: `${suspect.name || 'Unknown'} (#${suspect.playerId})`,
+            subtitle: `${stars} • Bounty $${formatCurrencyDisplay(suspect.bounty || 0)}`,
+            coords: suspect.coords,
+            chips: [
+                { label: stars, variant: 'danger' },
+                { label: `Heat ${suspect.wantedLevel || 0}`, variant: 'warning' },
+                { label: `Bounty $${formatCurrencyDisplay(suspect.bounty || 0)}` }
+            ],
+            detailRows: [
+                { label: 'Wanted Level', value: String(suspect.wantedLevel || 0) },
+                { label: 'Stars', value: stars },
+                { label: 'Bounty', value: `$${formatCurrencyDisplay(suspect.bounty || 0)}` },
+                { label: 'Coords', value: suspect.coords ? `${Math.floor(suspect.coords.x)}, ${Math.floor(suspect.coords.y)}` : 'Unknown' }
+            ]
+        });
+    });
+
+    return markers;
+}
+
+function renderPoliceLiveMap() {
+    const cadPayload = latestPoliceCadData || { officers: [], calls: [], suspects: [], generatedAt: 0 };
+    const metaText = `${formatLiveMapTimestamp(cadPayload.generatedAt)} • ${cadPayload.officers?.length || 0} units • ${cadPayload.calls?.length || 0} active calls • ${cadPayload.suspects?.length || 0} wanted suspects`;
+    renderLiveMapCanvas('police', buildPoliceLiveMapMarkers(), metaText);
+}
+
+async function loadAdminLiveMapData(showErrors = true) {
+    try {
+        const response = await fetch(`https://${CNRConfig.getResourceName()}/requestAdminLiveMapData`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (result.success) {
+            updateAdminLiveMapData(result.liveMapData || {});
+        } else if (showErrors) {
+            showToast(result.error || 'Unable to load the admin live map.', 'error');
+        }
+    } catch (error) {
+        if (showErrors) {
+            showToast('Unable to load the admin live map.', 'error');
+        }
+    }
+}
+
+function updateAdminLiveMapData(liveMapData = {}) {
+    latestAdminLiveMapData = {
+        players: liveMapData.players || [],
+        generatedAt: liveMapData.generatedAt || 0
+    };
+    renderAdminLiveMap();
+}
+
 let currentAdminTargetPlayerId = null;
-function showAdminPanel(playerList) {
+function showAdminPanel(playerList, liveMapData = null) {
     const adminPanel = document.getElementById('admin-panel');
     const playerListBody = document.getElementById('admin-player-list-body');
     if (!adminPanel || !playerListBody) return;
@@ -1859,6 +2244,25 @@ function showAdminPanel(playerList) {
     } else {
         playerListBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No players online or data unavailable.</td></tr>';
     }
+
+    if (liveMapData) {
+        updateAdminLiveMapData(liveMapData);
+    } else {
+        renderAdminLiveMap();
+    }
+
+    if (adminLiveMapRefreshInterval) {
+        clearInterval(adminLiveMapRefreshInterval);
+    }
+
+    loadAdminLiveMapData(false);
+    adminLiveMapRefreshInterval = setInterval(() => {
+        const panelIsVisible = adminPanel && !adminPanel.classList.contains('hidden');
+        if (panelIsVisible) {
+            loadAdminLiveMapData(false);
+        }
+    }, 5000);
+
     adminPanel.classList.remove('hidden');
     fetchSetNuiFocus(true, true);
 }
@@ -1866,6 +2270,10 @@ function showAdminPanel(playerList) {
 function hideAdminPanel() {
     const adminPanel = document.getElementById('admin-panel');
     if (adminPanel) adminPanel.classList.add('hidden');
+    if (adminLiveMapRefreshInterval) {
+        clearInterval(adminLiveMapRefreshInterval);
+        adminLiveMapRefreshInterval = null;
+    }
     const banReasonContainer = document.getElementById('admin-ban-reason-container');
     if (banReasonContainer) banReasonContainer.classList.add('hidden');
     const banReasonInput = document.getElementById('admin-ban-reason');
@@ -2622,31 +3030,136 @@ function showRobberMenu() {
 }
 
 let isPoliceMenuOpen = false;
+let policeCadRefreshInterval = null;
+let latestPoliceCadData = { officers: [], calls: [], suspects: [] };
+let latestCitationReasons = [];
 
 function showPoliceMenu(data = {}) {
     let policeMenu = document.getElementById('police-menu');
     if (!policeMenu) {
         policeMenu = document.createElement('section');
         policeMenu.id = 'police-menu';
-        policeMenu.className = 'menu role-action-menu hidden';
+        policeMenu.className = 'menu role-action-menu role-action-menu--police hidden';
         policeMenu.setAttribute('role', 'dialog');
         policeMenu.setAttribute('aria-modal', 'true');
+        policeMenu.setAttribute('aria-labelledby', 'policeMenuHeading');
         policeMenu.innerHTML = `
-            <div class="menu-header">
-                <h1>Police Menu</h1>
+            <div class="menu-header role-menu-header">
+                <div>
+                    <p class="role-menu-kicker">Law Enforcement Operations</p>
+                    <h1 id="policeMenuHeading">Police Menu</h1>
+                    <p class="role-menu-subtitle">Coordinate units, manage live dispatch traffic, and control the scene without losing visibility.</p>
+                </div>
                 <button id="police-menu-close-btn" class="close-btn" aria-label="Close Police Menu">
-                    <span class="close-icon">x</span>
+                    <span class="close-icon">✕</span>
                 </button>
             </div>
-            <div class="menu-options">
-                <button id="police-call-vehicle-btn" class="menu-btn"><span class="icon">🚓</span>Call Patrol Vehicle</button>
-                <button id="police-request-assist-btn" class="menu-btn"><span class="icon">📻</span>Request Assistance</button>
-                <button id="police-view-bounties-btn" class="menu-btn"><span class="icon">🔎</span>Wanted Players</button>
-                <div class="menu-inline-form">
-                    <input id="police-lookup-player-id" type="number" min="1" placeholder="Robber player ID">
-                    <button id="police-lookup-btn" class="menu-btn">Look Up</button>
+            <div class="role-menu-layout">
+                <div class="role-menu-main">
+                    <section class="role-card role-live-map-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Live Operations Map</h2>
+                                <p>Visualize on-duty units, active scenes, and wanted suspects in one shared command view.</p>
+                            </div>
+                        </div>
+                        <div class="live-map-shell">
+                            <div id="police-live-map" class="live-map-canvas"></div>
+                            <div id="police-live-map-details" class="live-map-details"></div>
+                        </div>
+                    </section>
+                    <section class="role-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Quick Actions</h2>
+                                <p>Immediate tools for field support and suspect tracking.</p>
+                            </div>
+                        </div>
+                        <div class="role-action-grid">
+                            <button id="police-call-vehicle-btn" class="menu-btn"><span class="icon">🚓</span>Call Patrol Vehicle</button>
+                            <button id="police-request-assist-btn" class="menu-btn"><span class="icon">📻</span>Request Assistance</button>
+                            <button id="police-request-urgent-assist-btn" class="menu-btn"><span class="icon">🚨</span>Urgent Backup</button>
+                            <button id="police-view-bounties-btn" class="menu-btn"><span class="icon">🔎</span>Wanted Players</button>
+                        </div>
+                    </section>
+                    <section class="role-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Lookup & Communications</h2>
+                                <p>Run checks, send updates, and issue citations from one place.</p>
+                            </div>
+                        </div>
+                        <div class="menu-inline-form menu-inline-form--compact">
+                            <input id="police-lookup-player-id" type="number" min="1" placeholder="Robber player ID">
+                            <button id="police-lookup-btn" class="menu-btn">Look Up</button>
+                        </div>
+                        <div class="menu-inline-form">
+                            <input id="police-text-target-id" type="number" min="1" placeholder="Player ID">
+                            <input id="police-text-message" type="text" maxlength="180" placeholder="Text message">
+                            <button id="police-send-text-btn" class="menu-btn">Send Text</button>
+                        </div>
+                        <div class="menu-inline-form menu-inline-form--citation">
+                            <input id="police-citation-target-id" type="number" min="1" placeholder="Target ID">
+                            <select id="police-citation-reason"></select>
+                            <input id="police-citation-amount" type="number" min="0" placeholder="Fine">
+                            <button id="police-issue-citation-btn" class="menu-btn">Issue Citation</button>
+                        </div>
+                        <div id="police-lookup-result" class="menu-result role-status-panel">Lookup results will appear here.</div>
+                    </section>
+                    <section class="role-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>CAD Call Intake</h2>
+                                <p>Create new incidents and flag scenes that need backup right away.</p>
+                            </div>
+                        </div>
+                        <div class="menu-inline-form">
+                            <input id="police-cad-title" type="text" maxlength="80" placeholder="CAD call title">
+                            <input id="police-cad-details" type="text" maxlength="240" placeholder="Details">
+                        </div>
+                        <div class="menu-inline-form menu-inline-form--cad">
+                            <select id="police-cad-priority">
+                                <option value="Low">Low</option>
+                                <option value="Medium">Medium</option>
+                                <option value="High">High</option>
+                                <option value="Critical">Critical</option>
+                            </select>
+                            <label class="menu-toggle"><input id="police-cad-backup" type="checkbox"> Backup</label>
+                            <label class="menu-toggle"><input id="police-cad-urgent" type="checkbox"> ASAP</label>
+                            <button id="police-create-cad-call-btn" class="menu-btn">Create CAD Call</button>
+                        </div>
+                        <div id="police-cad-status" class="menu-result role-status-panel">Create, update, and coordinate active calls from here.</div>
+                    </section>
                 </div>
-                <div id="police-lookup-result" class="menu-result"></div>
+                <aside class="role-menu-sidebar">
+                    <section class="role-card role-scroll-section">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>On-Duty Units</h2>
+                                <p>Live telemetry for every active officer.</p>
+                            </div>
+                        </div>
+                        <div id="police-cad-units-list" class="dispatch-list"></div>
+                    </section>
+                    <section class="role-card role-scroll-section">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Active CAD Calls</h2>
+                                <p>Current scenes, priority levels, and response state.</p>
+                            </div>
+                        </div>
+                        <div id="police-cad-calls-list" class="dispatch-list"></div>
+                    </section>
+                    <section class="role-card role-scroll-section">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Wanted Snapshot</h2>
+                                <p>Fast reference for the hottest suspects in the city.</p>
+                            </div>
+                        </div>
+                        <div id="police-cad-suspects-list" class="dispatch-list"></div>
+                    </section>
+                </aside>
             </div>
         `;
         document.body.appendChild(policeMenu);
@@ -2656,6 +3169,17 @@ function showPoliceMenu(data = {}) {
     document.body.classList.add('menu-open');
     isPoliceMenuOpen = true;
     setupPoliceMenuListeners();
+    updatePoliceCadData(data.cadData || latestPoliceCadData, data.citationReasons || latestCitationReasons);
+    loadPoliceCadData();
+
+    if (policeCadRefreshInterval) {
+        clearInterval(policeCadRefreshInterval);
+    }
+    policeCadRefreshInterval = setInterval(() => {
+        if (isPoliceMenuOpen) {
+            loadPoliceCadData(false);
+        }
+    }, 5000);
 }
 
 function hidePoliceMenu() {
@@ -2665,7 +3189,166 @@ function hidePoliceMenu() {
     }
     document.body.classList.remove('menu-open');
     isPoliceMenuOpen = false;
+    if (policeCadRefreshInterval) {
+        clearInterval(policeCadRefreshInterval);
+        policeCadRefreshInterval = null;
+    }
     fetchSetNuiFocus(false, false);
+}
+
+function updatePoliceCadData(cadData = {}, citationReasons = []) {
+    latestPoliceCadData = cadData || { officers: [], calls: [], suspects: [] };
+    latestCitationReasons = citationReasons || [];
+    const renderChip = (label, variant = '') => `<span class="dispatch-chip${variant ? ` dispatch-chip--${variant}` : ''}">${escapeHtml(label)}</span>`;
+    const renderEmptyCard = (title, detail) => `
+        <article class="dispatch-card dispatch-card--empty">
+            <h3 class="dispatch-card-title">${escapeHtml(title)}</h3>
+            ${detail ? `<p class="dispatch-card-body">${escapeHtml(detail)}</p>` : ''}
+        </article>
+    `;
+    const formatLocation = (coords) => (
+        coords && Number.isFinite(Number(coords.x)) && Number.isFinite(Number(coords.y))
+            ? `${Math.floor(Number(coords.x))}, ${Math.floor(Number(coords.y))}`
+            : 'Unknown'
+    );
+
+    const citationSelect = document.getElementById('police-citation-reason');
+    if (citationSelect) {
+        const previousValue = citationSelect.value;
+        citationSelect.innerHTML = '';
+        latestCitationReasons.forEach(reason => {
+            const option = document.createElement('option');
+            option.value = reason.id;
+            option.textContent = `${reason.label} ($${reason.fine || 0})`;
+            option.dataset.fine = reason.fine || 0;
+            citationSelect.appendChild(option);
+        });
+        if (previousValue && latestCitationReasons.some(reason => reason.id === previousValue)) {
+            citationSelect.value = previousValue;
+        }
+    }
+
+    const unitsList = document.getElementById('police-cad-units-list');
+    if (unitsList) {
+        const officers = latestPoliceCadData.officers || [];
+        unitsList.innerHTML = officers.length > 0
+            ? officers.map((officer) => {
+                const coords = formatLocation(officer.coords);
+                const vehicleInfo = officer.vehicleModel
+                    ? `${officer.vehicleType || 'Vehicle'}: ${officer.vehicleModel}`
+                    : 'On foot';
+                const speed = `${Math.round(Number(officer.speedMph) || 0)} mph`;
+                const rank = officer.rank || 'Officer';
+                const name = officer.name || 'Unknown';
+                const level = officer.level ? `Level ${officer.level}` : 'On duty';
+                return `
+                    <article class="dispatch-card">
+                        <div class="dispatch-card-header">
+                            <div>
+                                <h3 class="dispatch-card-title">${escapeHtml(`${rank} ${name} (#${officer.serverId || '?'})`)}</h3>
+                                <p class="dispatch-card-subtitle">${escapeHtml(level)}</p>
+                            </div>
+                            <span class="dispatch-pill">${escapeHtml(officer.equipped || 'Unarmed')}</span>
+                        </div>
+                        <div class="dispatch-chip-row">
+                            ${renderChip(vehicleInfo)}
+                            ${renderChip(speed)}
+                            ${renderChip(coords)}
+                        </div>
+                    </article>
+                `;
+            }).join('')
+            : renderEmptyCard('No police units online.', 'Active officers will appear here once they are on duty.');
+    }
+
+    const callsList = document.getElementById('police-cad-calls-list');
+    if (callsList) {
+        const calls = latestPoliceCadData.calls || [];
+        callsList.innerHTML = calls.length > 0
+            ? calls.map((call) => {
+                const location = formatLocation(call.coords);
+                const priorityClass = String(call.priority || 'medium').toLowerCase();
+                const detail = call.details || 'No additional notes entered.';
+                return `
+                    <article class="dispatch-card dispatch-card--call">
+                        <div class="dispatch-card-header">
+                            <div>
+                                <h3 class="dispatch-card-title">${escapeHtml(`#${call.id} ${call.title || 'Untitled Call'}`)}</h3>
+                                <p class="dispatch-card-subtitle">${escapeHtml(`By ${call.createdByName || 'Unknown'}`)}</p>
+                            </div>
+                            <span class="dispatch-pill dispatch-pill--${escapeHtml(priorityClass)}">${escapeHtml(call.priority || 'Medium')}</span>
+                        </div>
+                        <div class="dispatch-chip-row">
+                            ${renderChip(call.status || 'Open')}
+                            ${renderChip(location)}
+                            ${call.requestBackup ? renderChip('Backup requested', 'warning') : ''}
+                            ${call.urgent ? renderChip('ASAP', 'danger') : ''}
+                        </div>
+                        <p class="dispatch-card-body">${escapeHtml(detail)}</p>
+                        <div class="dispatch-action-row">
+                            <button class="menu-btn cad-status-btn" data-call-id="${call.id}" data-status="En Route">En Route</button>
+                            <button class="menu-btn cad-status-btn" data-call-id="${call.id}" data-status="On Scene">On Scene</button>
+                            <button class="menu-btn cad-status-btn" data-call-id="${call.id}" data-status="Resolved">Resolve</button>
+                        </div>
+                    </article>
+                `;
+            }).join('')
+            : renderEmptyCard('No active CAD calls.', 'New incidents and backup requests will populate this feed.');
+    }
+
+    const suspectsList = document.getElementById('police-cad-suspects-list');
+    if (suspectsList) {
+        const suspects = latestPoliceCadData.suspects || [];
+        suspectsList.innerHTML = suspects.length > 0
+            ? suspects.map((suspect) => {
+                const starCount = Math.min(Number(suspect.wantedStars) || 0, 5);
+                const stars = starCount > 0 ? '★'.repeat(starCount) : 'No stars';
+                return `
+                    <article class="dispatch-card">
+                        <div class="dispatch-card-header">
+                            <div>
+                                <h3 class="dispatch-card-title">${escapeHtml(`${suspect.name || 'Unknown'} (#${suspect.playerId || '?'})`)}</h3>
+                                <p class="dispatch-card-subtitle">${escapeHtml(`Wanted level ${suspect.wantedLevel || 0}`)}</p>
+                            </div>
+                            <span class="dispatch-pill dispatch-pill--danger">${escapeHtml(stars)}</span>
+                        </div>
+                        <div class="dispatch-chip-row">
+                            ${renderChip(`Bounty $${formatCurrencyDisplay(suspect.bounty || 0)}`, 'warning')}
+                            ${renderChip(`Heat ${suspect.wantedLevel || 0}`)}
+                        </div>
+                    </article>
+                `;
+            }).join('')
+            : renderEmptyCard('No wanted suspects right now.', 'When suspects build heat, they will show up here.');
+    }
+
+    const selectedReason = latestCitationReasons.find(reason => reason.id === (citationSelect && citationSelect.value));
+    const citationAmount = document.getElementById('police-citation-amount');
+    if (selectedReason && citationAmount && !citationAmount.dataset.userEdited) {
+        citationAmount.value = selectedReason.fine || 0;
+    }
+
+    renderPoliceLiveMap();
+}
+
+async function loadPoliceCadData(showErrors = true) {
+    try {
+        const response = await fetch(`https://${CNRConfig.getResourceName()}/requestPoliceCadData`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (result.success) {
+            updatePoliceCadData(result.cadData || {}, result.citationReasons || []);
+        } else if (showErrors) {
+            showToast(result.error || 'Unable to load CAD data.', 'error');
+        }
+    } catch (error) {
+        if (showErrors) {
+            showToast('Unable to load CAD data.', 'error');
+        }
+    }
 }
 
 function setupPoliceMenuListeners() {
@@ -2690,7 +3373,15 @@ function setupPoliceMenuListeners() {
         fetch(`https://${CNRConfig.getResourceName()}/requestPoliceAssistance`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({ urgent: false })
+        });
+        hidePoliceMenu();
+    });
+    bindOnce('police-request-urgent-assist-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/requestPoliceAssistance`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urgent: true })
         });
         hidePoliceMenu();
     });
@@ -2729,6 +3420,99 @@ function setupPoliceMenuListeners() {
             if (resultEl) resultEl.textContent = 'Lookup failed.';
         }
     });
+    bindOnce('police-send-text-btn', async () => {
+        const targetId = parseInt(document.getElementById('police-text-target-id')?.value || '0');
+        const message = (document.getElementById('police-text-message')?.value || '').trim();
+        if (!targetId || !message) {
+            showToast('Enter a target player and a message.', 'error');
+            return;
+        }
+
+        await fetch(`https://${CNRConfig.getResourceName()}/sendRoleTextMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetId, message })
+        });
+        document.getElementById('police-text-message').value = '';
+        showToast('Message sent.', 'success');
+    });
+    bindOnce('police-issue-citation-btn', async () => {
+        const targetId = parseInt(document.getElementById('police-citation-target-id')?.value || '0');
+        const citationId = document.getElementById('police-citation-reason')?.value;
+        const amount = parseInt(document.getElementById('police-citation-amount')?.value || '0');
+        if (!targetId || !citationId) {
+            showToast('Choose a target and citation reason.', 'error');
+            return;
+        }
+
+        await fetch(`https://${CNRConfig.getResourceName()}/issuePoliceCitation`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetId, citationId, amount })
+        });
+        showToast('Citation submitted.', 'success');
+    });
+    bindOnce('police-create-cad-call-btn', async () => {
+        const title = (document.getElementById('police-cad-title')?.value || '').trim();
+        const details = (document.getElementById('police-cad-details')?.value || '').trim();
+        const priority = document.getElementById('police-cad-priority')?.value || 'Medium';
+        const requestBackup = document.getElementById('police-cad-backup')?.checked === true;
+        const urgent = document.getElementById('police-cad-urgent')?.checked === true;
+        if (!title) {
+            showToast('Enter a CAD call title.', 'error');
+            return;
+        }
+
+        await fetch(`https://${CNRConfig.getResourceName()}/createCadCall`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, details, priority, requestBackup, urgent })
+        });
+        document.getElementById('police-cad-title').value = '';
+        document.getElementById('police-cad-details').value = '';
+        showToast('CAD call created.', 'success');
+    });
+
+    const citationReason = document.getElementById('police-citation-reason');
+    if (citationReason && !citationReason.hasChangeListener) {
+        citationReason.addEventListener('change', () => {
+            const selectedReason = latestCitationReasons.find(reason => reason.id === citationReason.value);
+            const citationAmount = document.getElementById('police-citation-amount');
+            if (selectedReason && citationAmount) {
+                citationAmount.dataset.userEdited = '';
+                citationAmount.value = selectedReason.fine || 0;
+            }
+        });
+        citationReason.hasChangeListener = true;
+    }
+
+    const citationAmount = document.getElementById('police-citation-amount');
+    if (citationAmount && !citationAmount.hasInputListener) {
+        citationAmount.addEventListener('input', () => {
+            citationAmount.dataset.userEdited = 'true';
+        });
+        citationAmount.hasInputListener = true;
+    }
+
+    const policeMenu = document.getElementById('police-menu');
+    if (policeMenu && !policeMenu.hasCadListener) {
+        policeMenu.addEventListener('click', async (event) => {
+            const statusButton = event.target.closest('.cad-status-btn');
+            if (!statusButton) return;
+
+            const callId = parseInt(statusButton.dataset.callId || '0');
+            const status = statusButton.dataset.status || 'Open';
+            if (!callId) return;
+
+            await fetch(`https://${CNRConfig.getResourceName()}/updateCadCallStatus`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callId, status })
+            });
+            showToast(`CAD call #${callId} updated to ${status}.`, 'success');
+        });
+        policeMenu.hasCadListener = true;
+    }
 }
 
 function hideRobberMenu() {
@@ -2831,6 +3615,30 @@ function setupRobberMenuListeners() {
             body: JSON.stringify({})
         }).catch(error => console.error('[CNR_ROBBER_MENU] Error buying contraband:', error));
         hideRobberMenu();
+    });
+    bindOnce('robber-request-assist-btn', () => {
+        fetch(`https://${CNRConfig.getResourceName()}/requestRobberAssistance`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urgent: false })
+        }).catch(error => console.error('[CNR_ROBBER_MENU] Error requesting assistance:', error));
+        hideRobberMenu();
+    });
+    bindOnce('robber-send-text-btn', async () => {
+        const targetId = parseInt(document.getElementById('robber-text-target-id')?.value || '0');
+        const message = (document.getElementById('robber-text-message')?.value || '').trim();
+        if (!targetId || !message) {
+            showToast('Enter a target player and message.', 'error');
+            return;
+        }
+
+        await fetch(`https://${CNRConfig.getResourceName()}/sendRoleTextMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetId, message })
+        });
+        document.getElementById('robber-text-message').value = '';
+        showToast('Message sent.', 'success');
     });
 }
 
@@ -5630,8 +6438,8 @@ class BankingSystem {
 
     showNotification(message, type = 'info') {
         // Integrate with existing notification system
-        if (window.showCashNotification) {
-            window.showCashNotification(message, type);
+        if (window.showToast) {
+            window.showToast(message, type);
         } else {
             console.log(`[CNR_BANKING] ${type.toUpperCase()}: ${message}`);
         }
@@ -6088,8 +6896,8 @@ class HeistSystem {
 
     showNotification(message, type = 'info') {
         // Integrate with existing notification system
-        if (window.showCashNotification) {
-            window.showCashNotification(message, type);
+        if (window.showToast) {
+            window.showToast(message, type);
         } else {
             console.log(`[CNR_HEIST] ${type.toUpperCase()}: ${message}`);
         }

@@ -281,6 +281,24 @@
             <button id="admin-toggle-invisible-btn" class="admin-action-btn" aria-label="Toggle Invisibility"><span class="icon">👁️</span>Invisible</button>
             <button id="admin-stop-spectate-btn" class="admin-action-btn" aria-label="Stop Spectating"><span class="icon">📺</span>Stop Spectate</button>
         </div>
+        <section class="admin-live-map-card">
+            <div class="admin-live-map-header">
+                <div>
+                    <h2>Live Operations Map</h2>
+                    <p>Track every connected player with role, speed, equipped item, and current vehicle context.</p>
+                </div>
+                <div id="admin-live-map-filters" class="live-map-filter-group" aria-label="Admin live map filters">
+                    <button type="button" class="live-map-filter-btn active" data-filter="all">All</button>
+                    <button type="button" class="live-map-filter-btn" data-filter="cop">Cops</button>
+                    <button type="button" class="live-map-filter-btn" data-filter="robber">Robbers</button>
+                    <button type="button" class="live-map-filter-btn" data-filter="citizen">Civilians</button>
+                </div>
+            </div>
+            <div class="live-map-shell live-map-shell--admin">
+                <div id="admin-live-map" class="live-map-canvas"></div>
+                <div id="admin-live-map-details" class="live-map-details"></div>
+            </div>
+        </section>
         <h2>Player List</h2>
         <div class="admin-player-list-container">
             <table>
@@ -387,36 +405,58 @@
     <div id="toast" class="toast-notification toast-hidden"></div>
 
     <!-- Robber Menu Section -->
-    <section id="robber-menu" class="menu hidden" role="dialog" aria-labelledby="robberMenuHeading" aria-modal="true">
-        <div class="menu-header">
-            <h1 id="robberMenuHeading">Robber Menu</h1>
+    <section id="robber-menu" class="menu role-action-menu role-action-menu--robber hidden" role="dialog" aria-labelledby="robberMenuHeading" aria-modal="true">
+        <div class="menu-header role-menu-header">
+            <div>
+                <p class="role-menu-kicker">Criminal Operations</p>
+                <h1 id="robberMenuHeading">Robber Menu</h1>
+                <p class="role-menu-subtitle">Get moving fast, stay coordinated, and keep your heat under control.</p>
+            </div>
             <button id="robber-menu-close-btn" class="close-btn" aria-label="Close Robber Menu">
                 <span class="close-icon">✕</span>
             </button>
         </div>
-        <div class="menu-options">
-            <button id="robber-call-vehicle-btn" class="menu-btn">
-                <span class="icon">🚗</span>Call Getaway Vehicle
-            </button>
-            <button id="robber-create-crew-btn" class="menu-btn">
-                <span class="icon">👥</span>Create Heist Crew
-            </button>
-            <button id="start-heist-btn" class="menu-btn">
-                <span class="icon">💰</span>Start Heist
-            </button>
-            <button id="robber-wanted-status-btn" class="menu-btn">
-                <span class="icon">⚠️</span>Check Wanted Status
-            </button>
-            <button id="view-bounties-btn" class="menu-btn">
-                <span class="icon">🔍</span>View Bounties
-            </button>
-            <button id="find-hideout-btn" class="menu-btn">
-                <span class="icon">🏠</span>Find Hideout
-            </button>
-            <button id="buy-contraband-btn" class="menu-btn">
-                <span class="icon">📦</span>Buy Contraband
-            </button>
-            <div id="robber-status-result" class="menu-result"></div>
+        <div class="role-menu-layout role-menu-layout--single">
+            <div class="role-menu-main">
+                <section class="role-card">
+                    <h2>Quick Actions</h2>
+                    <div class="role-action-grid">
+                        <button id="robber-call-vehicle-btn" class="menu-btn">
+                            <span class="icon">🚗</span>Call Getaway Vehicle
+                        </button>
+                        <button id="robber-create-crew-btn" class="menu-btn">
+                            <span class="icon">👥</span>Create Heist Crew
+                        </button>
+                        <button id="start-heist-btn" class="menu-btn">
+                            <span class="icon">💰</span>Start Heist
+                        </button>
+                        <button id="robber-wanted-status-btn" class="menu-btn">
+                            <span class="icon">⚠️</span>Check Wanted Status
+                        </button>
+                        <button id="view-bounties-btn" class="menu-btn">
+                            <span class="icon">🔍</span>View Bounties
+                        </button>
+                        <button id="find-hideout-btn" class="menu-btn">
+                            <span class="icon">🏠</span>Find Hideout
+                        </button>
+                        <button id="buy-contraband-btn" class="menu-btn">
+                            <span class="icon">📦</span>Buy Contraband
+                        </button>
+                        <button id="robber-request-assist-btn" class="menu-btn">
+                            <span class="icon">📣</span>Request Backup
+                        </button>
+                    </div>
+                </section>
+                <section class="role-card">
+                    <h2>Communications</h2>
+                    <div class="menu-inline-form">
+                        <input id="robber-text-target-id" type="number" min="1" placeholder="Player ID">
+                        <input id="robber-text-message" type="text" maxlength="180" placeholder="Text message">
+                        <button id="robber-send-text-btn" class="menu-btn">Send Text</button>
+                    </div>
+                </section>
+                <div id="robber-status-result" class="menu-result role-status-panel"></div>
+            </div>
         </div>
     </section>
 
