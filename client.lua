@@ -126,6 +126,7 @@ end
 
 local copStoreBlips = {}
 local robberStoreBlips = {}
+local publicStoreBlips = {}
 
 -- Track protected peds to prevent NPC suppression from affecting them
 local g_protectedPolicePeds = {}
@@ -149,6 +150,10 @@ local localPlayerInventory = {}
 local localPlayerEquippedItems = {}
 local pendingPoliceLookupCallbacks = {}
 local roleSelectionShownForCurrentDeath = false
+local deathReportedForCurrentLife = false
+local adminNoClipEnabled = false
+local adminInvisibleEnabled = false
+local adminSpectateTargetServerId = nil
 
 -- Function to get the items, accessible by other parts of this script
 function GetClientConfigItems()
@@ -465,8 +470,13 @@ local function UpdateCharacterEditorCamera(mode)
 
     local heading = GetEntityHeading(ped)
     local headingRadians = math.rad(heading)
-    local camX = focusCoords.x - math.sin(headingRadians) * distance
-    local camY = focusCoords.y + math.cos(headingRadians) * distance
+    local forwardVector = vector3(-math.sin(headingRadians), math.cos(headingRadians), 0.0)
+    local rightVector = vector3(math.cos(headingRadians), math.sin(headingRadians), 0.0)
+    local framingOffset = cameraMode == "face" and -0.04 or (cameraMode == "body" and -0.14 or -0.28)
+    local targetCoords = focusCoords + (rightVector * framingOffset)
+    local cameraLateralOffset = framingOffset * 0.35
+    local camX = focusCoords.x - forwardVector.x * distance + rightVector.x * cameraLateralOffset
+    local camY = focusCoords.y - forwardVector.y * distance + rightVector.y * cameraLateralOffset
     local camZ = focusCoords.z + heightOffset
 
     if not editorCamera or not DoesCamExist(editorCamera) then
@@ -474,7 +484,7 @@ local function UpdateCharacterEditorCamera(mode)
     end
 
     SetCamCoord(editorCamera, camX, camY, camZ)
-    PointCamAtCoord(editorCamera, focusCoords.x, focusCoords.y, focusCoords.z)
+    PointCamAtCoord(editorCamera, targetCoords.x, targetCoords.y, targetCoords.z)
     SetCamActive(editorCamera, true)
     SetCamFov(editorCamera, cameraMode == "face" and 30.0 or (cameraMode == "body" and 42.0 or 52.0))
     RenderScriptCams(true, true, 250, true, true)
@@ -526,6 +536,26 @@ local function GetEntryHeading(entry, fallbackHeading)
     end
 
     return entry.heading or fallbackHeading or 0.0
+end
+
+local function GetVendorIdentityKey(vendor)
+    if not vendor or not vendor.location then
+        return nil
+    end
+
+    return tostring(vendor.id or (vendor.name or "vendor") .. "_" .. vendor.location.x .. "_" .. vendor.location.y .. "_" .. vendor.location.z)
+end
+
+local function IsMedicalStoreVendor(vendor)
+    return vendor and (vendor.storeType == "medical" or vendor.name == "Medical Store")
+end
+
+local function GetMedicalStoreBlipName(vendor)
+    if not vendor then
+        return "Medical Store"
+    end
+
+    return vendor.blipName or vendor.name or "Medical Store"
 end
 
 local function GetRoleSpawnHeading(playerRole)
@@ -1741,6 +1771,178 @@ AddEventHandler('cnr:adminTeleportToCoords', function(coords)
     end
 end)
 
+local function GetAdminControlledEntity()
+    local ped = PlayerPedId()
+    if ped and ped ~= 0 and IsPedInAnyVehicle(ped, false) then
+        local vehicle = GetVehiclePedIsIn(ped, false)
+        if vehicle and vehicle ~= 0 and GetPedInVehicleSeat(vehicle, -1) == ped then
+            return vehicle, ped
+        end
+    end
+
+    return ped, ped
+end
+
+local function SetAdminInvisibleState(enabled)
+    local entity, ped = GetAdminControlledEntity()
+    adminInvisibleEnabled = enabled == true
+
+    if not ped or ped == 0 then
+        return adminInvisibleEnabled
+    end
+
+    SetEntityVisible(ped, not adminInvisibleEnabled, false)
+    if adminInvisibleEnabled then
+        SetEntityAlpha(ped, 125, false)
+    else
+        ResetEntityAlpha(ped)
+    end
+
+    if entity and entity ~= ped then
+        SetEntityVisible(entity, not adminInvisibleEnabled, false)
+        if adminInvisibleEnabled then
+            SetEntityAlpha(entity, 180, false)
+        else
+            ResetEntityAlpha(entity)
+        end
+    end
+
+    SetLocalPlayerVisibleLocally(true)
+    return adminInvisibleEnabled
+end
+
+local function SetAdminNoClipState(enabled)
+    local entity, ped = GetAdminControlledEntity()
+    adminNoClipEnabled = enabled == true
+
+    if not entity or entity == 0 then
+        return adminNoClipEnabled
+    end
+
+    FreezeEntityPosition(entity, adminNoClipEnabled)
+    SetEntityCollision(entity, not adminNoClipEnabled, not adminNoClipEnabled)
+    SetEntityInvincible(ped, adminNoClipEnabled)
+
+    if entity ~= ped then
+        SetEntityInvincible(entity, adminNoClipEnabled)
+    end
+
+    if adminNoClipEnabled then
+        SetEntityVelocity(entity, 0.0, 0.0, 0.0)
+    end
+
+    return adminNoClipEnabled
+end
+
+local function StopAdminSpectate()
+    if not adminSpectateTargetServerId then
+        return false
+    end
+
+    NetworkSetInSpectatorMode(false, PlayerPedId())
+    adminSpectateTargetServerId = nil
+    ShowNotification("~g~Stopped spectating.")
+    return true
+end
+
+local function StartAdminSpectate(targetServerId)
+    local targetId = tonumber(targetServerId)
+    if not targetId or targetId <= 0 then
+        return false, "Invalid player ID."
+    end
+
+    local targetPlayer = GetPlayerFromServerId(targetId)
+    if targetPlayer == -1 then
+        return false, "Target is not currently available to spectate."
+    end
+
+    local targetPed = GetPlayerPed(targetPlayer)
+    if not targetPed or targetPed == 0 or not DoesEntityExist(targetPed) then
+        return false, "Unable to spectate that player right now."
+    end
+
+    if adminSpectateTargetServerId and adminSpectateTargetServerId ~= targetId then
+        StopAdminSpectate()
+    end
+
+    adminSpectateTargetServerId = targetId
+    NetworkSetInSpectatorMode(true, targetPed)
+    ShowNotification("~b~Spectating player " .. tostring(targetId))
+    return true
+end
+
+Citizen.CreateThread(function()
+    local function normalizeVector(vec)
+        local magnitude = math.sqrt((vec.x * vec.x) + (vec.y * vec.y) + (vec.z * vec.z))
+        if magnitude <= 0.001 then
+            return vector3(0.0, 0.0, 0.0)
+        end
+
+        return vector3(vec.x / magnitude, vec.y / magnitude, vec.z / magnitude)
+    end
+
+    while true do
+        if adminNoClipEnabled then
+            Citizen.Wait(0)
+
+            local entity = GetAdminControlledEntity()
+            local currentCoords = GetEntityCoords(entity)
+            local camRotation = GetGameplayCamRot(2)
+            local headingRadians = math.rad(camRotation.z)
+            local pitchRadians = math.rad(camRotation.x)
+            local forward = vector3(-math.sin(headingRadians) * math.cos(pitchRadians), math.cos(headingRadians) * math.cos(pitchRadians), math.sin(pitchRadians))
+            local right = vector3(math.cos(headingRadians), math.sin(headingRadians), 0.0)
+            local moveVector = vector3(0.0, 0.0, 0.0)
+            local speed = IsControlPressed(0, 21) and 4.5 or 1.8
+
+            if IsControlPressed(0, 32) then
+                moveVector = moveVector + forward
+            end
+            if IsControlPressed(0, 33) then
+                moveVector = moveVector - forward
+            end
+            if IsControlPressed(0, 34) then
+                moveVector = moveVector - right
+            end
+            if IsControlPressed(0, 35) then
+                moveVector = moveVector + right
+            end
+            if IsControlPressed(0, 22) then
+                moveVector = moveVector + vector3(0.0, 0.0, 1.0)
+            end
+            if IsControlPressed(0, 36) then
+                moveVector = moveVector - vector3(0.0, 0.0, 1.0)
+            end
+
+            moveVector = normalizeVector(moveVector)
+            SetEntityVelocity(entity, 0.0, 0.0, 0.0)
+            SetEntityCoordsNoOffset(entity, currentCoords.x + (moveVector.x * speed), currentCoords.y + (moveVector.y * speed), currentCoords.z + (moveVector.z * speed), true, true, true)
+        else
+            Citizen.Wait(250)
+        end
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        if adminSpectateTargetServerId then
+            local targetPlayer = GetPlayerFromServerId(adminSpectateTargetServerId)
+            if targetPlayer == -1 then
+                StopAdminSpectate()
+            else
+                local targetPed = GetPlayerPed(targetPlayer)
+                if not targetPed or targetPed == 0 or not DoesEntityExist(targetPed) then
+                    StopAdminSpectate()
+                end
+            end
+
+            Citizen.Wait(1000)
+        else
+            Citizen.Wait(1500)
+        end
+    end
+end)
+
 -- =====================================
 --           STORE BLIP MANAGEMENT
 -- =====================================
@@ -1887,6 +2089,46 @@ function UpdateRobberStoreBlips()
     end
 end
 
+function UpdatePublicStoreBlips()
+    if type(Config.NPCVendors) ~= "table" then
+        return
+    end
+
+    for _, vendor in ipairs(Config.NPCVendors) do
+        if IsMedicalStoreVendor(vendor) and vendor.location then
+            local blipKey = GetVendorIdentityKey(vendor)
+            if blipKey and (not publicStoreBlips[blipKey] or not DoesBlipExist(publicStoreBlips[blipKey])) then
+                local blip = AddBlipForCoord(vendor.location.x, vendor.location.y, vendor.location.z)
+                SetBlipSprite(blip, vendor.blipSprite or 61)
+                SetBlipColour(blip, vendor.blipColor or 2)
+                SetBlipScale(blip, 0.85)
+                SetBlipAsShortRange(blip, true)
+                BeginTextCommandSetBlipName("STRING")
+                AddTextComponentString(GetMedicalStoreBlipName(vendor))
+                EndTextCommandSetBlipName(blip)
+                publicStoreBlips[blipKey] = blip
+            end
+        end
+    end
+
+    for blipKey, blipId in pairs(publicStoreBlips) do
+        local stillExists = false
+        for _, vendor in ipairs(Config.NPCVendors or {}) do
+            if IsMedicalStoreVendor(vendor) and GetVendorIdentityKey(vendor) == blipKey then
+                stillExists = true
+                break
+            end
+        end
+
+        if not stillExists then
+            if blipId and DoesBlipExist(blipId) then
+                RemoveBlip(blipId)
+            end
+            publicStoreBlips[blipKey] = nil
+        end
+    end
+end
+
 -- =====================================
 --           NPC MANAGEMENT
 -- =====================================
@@ -1982,6 +2224,46 @@ function SpawnRobberStorePeds()
                 g_protectedPolicePeds[ped] = true
                 g_spawnedNPCs[vendor.name] = ped
 
+            end
+        end
+    end
+end
+
+function SpawnPublicStorePeds()
+    if type(Config.NPCVendors) ~= "table" then
+        return
+    end
+
+    for _, vendor in ipairs(Config.NPCVendors) do
+        if IsMedicalStoreVendor(vendor) and vendor.location then
+            local spawnKey = GetVendorIdentityKey(vendor)
+            if spawnKey and not g_spawnedNPCs[spawnKey] then
+                local modelHash = GetHashKey(vendor.model or "s_m_m_doctor_01")
+                RequestModel(modelHash)
+                while not HasModelLoaded(modelHash) do
+                    Citizen.Wait(10)
+                end
+
+                local x, y, z, heading
+                if vendor.location.w then
+                    x, y, z, heading = vendor.location.x, vendor.location.y, vendor.location.z, vendor.location.w
+                else
+                    x, y, z = vendor.location.x, vendor.location.y, vendor.location.z
+                    heading = vendor.heading or 0.0
+                end
+
+                local ped = CreatePed(4, modelHash, x, y, z - 1.0, heading, false, true)
+                SetEntityAsMissionEntity(ped, true, true)
+                SetBlockingOfNonTemporaryEvents(ped, true)
+                SetPedFleeAttributes(ped, 0, false)
+                SetPedCombatAttributes(ped, 17, true)
+                SetPedCanRagdoll(ped, false)
+                SetPedDiesWhenInjured(ped, false)
+                SetEntityInvincible(ped, true)
+                FreezeEntityPosition(ped, true)
+
+                g_protectedPolicePeds[ped] = true
+                g_spawnedNPCs[spawnKey] = ped
             end
         end
     end
@@ -2132,8 +2414,10 @@ Citizen.CreateThread(function()
     Citizen.Wait(2000)
     SpawnCopStorePed()
     SpawnRobberStorePeds()
+    SpawnPublicStorePeds()
     SpawnRobberVehicles() -- Added vehicle spawning for robbers
     SpawnPoliceVehicles()
+    UpdatePublicStoreBlips()
     -- Initial blip setup based on current role
     if role == "cop" then
         UpdateCopStoreBlips()
@@ -2247,6 +2531,7 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
     UpdateActivityBlips()
     SendNUIMessage({ action = 'updateMoney', cash = playerCash })
     UpdateCopStoreBlips() -- removed argument
+    UpdatePublicStoreBlips()
     SendNUIMessage({
         action = "updateXPBar",
         currentXP = playerData.xp,
@@ -2320,11 +2605,33 @@ Citizen.CreateThread(function()
 
         if isDead and not roleSelectionShownForCurrentDeath then
             roleSelectionShownForCurrentDeath = true
+            if not deathReportedForCurrentLife then
+                deathReportedForCurrentLife = true
+
+                local killerServerId = 0
+                local killerEntity = GetPedSourceOfDeath(playerPed)
+                if killerEntity and killerEntity ~= 0 and DoesEntityExist(killerEntity) then
+                    if IsEntityAVehicle(killerEntity) then
+                        killerEntity = GetPedInVehicleSeat(killerEntity, -1)
+                    end
+
+                    if killerEntity and killerEntity ~= 0 and DoesEntityExist(killerEntity) and IsPedAPlayer(killerEntity) then
+                        local killerPlayer = NetworkGetPlayerIndexFromPed(killerEntity)
+                        if killerPlayer and killerPlayer ~= -1 then
+                            killerServerId = GetPlayerServerId(killerPlayer) or 0
+                        end
+                    end
+                end
+
+                TriggerServerEvent('cnr:playerDeathState', killerServerId)
+            end
+
             TriggerEvent('cnr:closeInventory')
             CloseBankingInterface()
             TriggerServerEvent('cnr:requestRoleSelection')
         elseif not isDead and roleSelectionShownForCurrentDeath then
             roleSelectionShownForCurrentDeath = false
+            deathReportedForCurrentLife = false
         end
 
         Citizen.Wait(isDead and 750 or 250)
@@ -4725,6 +5032,67 @@ RegisterNUICallback('teleportToPlayerAdminUI', function(data, cb)
     cb({ success = true })
 end)
 
+RegisterNUICallback('adminToggleNoClip', function(data, cb)
+    local enabled = SetAdminNoClipState(not adminNoClipEnabled)
+    if enabled then
+        ShowNotification("~b~Admin no clip enabled.")
+    else
+        ShowNotification("~g~Admin no clip disabled.")
+    end
+
+    cb({ success = true, enabled = enabled })
+end)
+
+RegisterNUICallback('adminToggleInvisible', function(data, cb)
+    local enabled = SetAdminInvisibleState(not adminInvisibleEnabled)
+    if enabled then
+        ShowNotification("~b~Admin invisibility enabled.")
+    else
+        ShowNotification("~g~Admin invisibility disabled.")
+    end
+
+    cb({ success = true, enabled = enabled })
+end)
+
+RegisterNUICallback('adminSpectatePlayer', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    local success, errorMessage = StartAdminSpectate(targetId)
+    cb({ success = success, error = errorMessage })
+end)
+
+RegisterNUICallback('adminStopSpectate', function(data, cb)
+    local stopped = StopAdminSpectate()
+    cb({ success = true, active = not stopped and adminSpectateTargetServerId ~= nil })
+end)
+
+RegisterNUICallback('adminAddInventoryItem', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    local itemId = tostring(data and data.itemId or "")
+    local quantity = tonumber(data and data.quantity) or 1
+
+    if not targetId or targetId <= 0 or itemId == "" then
+        cb({ success = false, error = "Invalid admin inventory request." })
+        return
+    end
+
+    TriggerServerEvent('cnr:adminAddInventoryItem', targetId, itemId, quantity)
+    cb({ success = true })
+end)
+
+RegisterNUICallback('adminRemoveInventoryItem', function(data, cb)
+    local targetId = tonumber(data and data.targetId)
+    local itemId = tostring(data and data.itemId or "")
+    local quantity = tonumber(data and data.quantity) or 1
+
+    if not targetId or targetId <= 0 or itemId == "" then
+        cb({ success = false, error = "Invalid admin inventory request." })
+        return
+    end
+
+    TriggerServerEvent('cnr:adminRemoveInventoryItem', targetId, itemId, quantity)
+    cb({ success = true })
+end)
+
 local function SpawnRequestedRoleVehicle(requestedRole)
     local normalizedRole = requestedRole == "civilian" and "citizen" or (requestedRole or role or playerData.role or "citizen")
     local modelName = nil
@@ -4752,6 +5120,74 @@ local function SpawnRequestedRoleVehicle(requestedRole)
     }
 
     return CreatePersistentRoleVehicle(vehicleSpawn, modelName, platePrefix)
+end
+
+local function RemoveTrackedSpikeStrip(spikeStrip)
+    for i = #currentSpikeStrips, 1, -1 do
+        if currentSpikeStrips[i] == spikeStrip or not DoesEntityExist(currentSpikeStrips[i]) then
+            table.remove(currentSpikeStrips, i)
+        end
+    end
+end
+
+local function CollectActiveSpikeStrips()
+    local strips = {}
+    local seen = {}
+
+    for i = #currentSpikeStrips, 1, -1 do
+        local spikeStrip = currentSpikeStrips[i]
+        if spikeStrip and DoesEntityExist(spikeStrip) then
+            local key = tostring(NetworkGetEntityIsNetworked(spikeStrip) and NetworkGetNetworkIdFromEntity(spikeStrip) or spikeStrip)
+            if not seen[key] then
+                seen[key] = true
+                strips[#strips + 1] = spikeStrip
+            end
+        else
+            table.remove(currentSpikeStrips, i)
+        end
+    end
+
+    if type(GetGamePool) == "function" then
+        for _, object in ipairs(GetGamePool('CObject') or {}) do
+            if object and object ~= 0 and DoesEntityExist(object) and GetEntityModel(object) == spikeStripModelHash then
+                local key = tostring(NetworkGetEntityIsNetworked(object) and NetworkGetNetworkIdFromEntity(object) or object)
+                if not seen[key] then
+                    seen[key] = true
+                    strips[#strips + 1] = object
+                end
+            end
+        end
+    end
+
+    return strips
+end
+
+local function DeleteTrackedSpikeStrip(spikeStrip)
+    if not spikeStrip or spikeStrip == 0 or not DoesEntityExist(spikeStrip) then
+        RemoveTrackedSpikeStrip(spikeStrip)
+        return true
+    end
+
+    if NetworkGetEntityIsNetworked(spikeStrip) and not NetworkHasControlOfEntity(spikeStrip) then
+        NetworkRequestControlOfEntity(spikeStrip)
+        local attempts = 0
+        while not NetworkHasControlOfEntity(spikeStrip) and attempts < 20 do
+            Citizen.Wait(25)
+            NetworkRequestControlOfEntity(spikeStrip)
+            attempts = attempts + 1
+        end
+    end
+
+    if DoesEntityExist(spikeStrip) then
+        SetEntityAsMissionEntity(spikeStrip, true, true)
+        DeleteObject(spikeStrip)
+        if DoesEntityExist(spikeStrip) then
+            DeleteEntity(spikeStrip)
+        end
+    end
+
+    RemoveTrackedSpikeStrip(spikeStrip)
+    return not DoesEntityExist(spikeStrip)
 end
 
 local function ApplyInventoryUseEffect(itemId)
@@ -4806,7 +5242,9 @@ local function ApplyInventoryUseEffect(itemId)
 
             SetTimeout(Config.SpikeStripDuration or 120000, function()
                 if DoesEntityExist(spikeStrip) then
-                    DeleteEntity(spikeStrip)
+                    DeleteTrackedSpikeStrip(spikeStrip)
+                else
+                    RemoveTrackedSpikeStrip(spikeStrip)
                 end
             end)
 
@@ -4900,17 +5338,19 @@ RegisterKeyMapping('+cnr_deployspikestrip', 'Deploy Spike Strip', 'keyboard', 'G
 
 Citizen.CreateThread(function()
     local recentlySpikedVehicles = {}
-    local wheelBones = {
-        "wheel_lf",
-        "wheel_rf",
-        "wheel_lm1",
-        "wheel_rm1",
-        "wheel_lm2",
-        "wheel_rm2",
-        "wheel_lm3",
-        "wheel_rm3",
-        "wheel_lr",
-        "wheel_rr"
+    local wheelBoneToTyreIndex = {
+        wheel_lf = 0,
+        wheel_rf = 1,
+        wheel_lm1 = 2,
+        wheel_rm1 = 3,
+        wheel_lm2 = 4,
+        wheel_rm2 = 5,
+        wheel_lm3 = 4,
+        wheel_rm3 = 5,
+        wheel_lr = 4,
+        wheel_rr = 5,
+        wheel_bf = 0,
+        wheel_br = 4
     }
 
     local function getVehiclesToCheck()
@@ -4926,12 +5366,12 @@ Citizen.CreateThread(function()
         return {}
     end
 
-    local function burstVehicleTyres(vehicle)
+    local function burstVehicleTyres(vehicle, tyreIndices)
         if not NetworkHasControlOfEntity(vehicle) then
             NetworkRequestControlOfEntity(vehicle)
         end
 
-        for tyreIndex = 0, 7 do
+        for _, tyreIndex in ipairs(tyreIndices) do
             SetVehicleTyreBurst(vehicle, tyreIndex, true, 1000.0)
         end
     end
@@ -4947,47 +5387,51 @@ Citizen.CreateThread(function()
         return ("ent:%s"):format(vehicle)
     end
 
-    local function isWheelOnSpikeStrip(vehicle, stripCoords)
-        local nearestDistance = math.huge
+    local function getSpikeStripHitTyres(vehicle, spikeStrip)
+        local minDim, maxDim = GetModelDimensions(GetEntityModel(spikeStrip))
+        local paddingX = 0.45
+        local paddingY = 0.75
+        local paddingZ = 0.65
+        local tyreIndices = {}
+        local seenTyres = {}
 
-        for _, boneName in ipairs(wheelBones) do
+        for boneName, tyreIndex in pairs(wheelBoneToTyreIndex) do
             local boneIndex = GetEntityBoneIndexByName(vehicle, boneName)
             if boneIndex and boneIndex ~= -1 then
                 local wheelCoords = GetWorldPositionOfEntityBone(vehicle, boneIndex)
-                local dx = wheelCoords.x - stripCoords.x
-                local dy = wheelCoords.y - stripCoords.y
-                local dz = math.abs(wheelCoords.z - stripCoords.z)
-                local distance2D = math.sqrt((dx * dx) + (dy * dy))
+                local localCoords = GetOffsetFromEntityGivenWorldCoords(spikeStrip, wheelCoords.x, wheelCoords.y, wheelCoords.z)
+                local withinX = localCoords.x >= (minDim.x - paddingX) and localCoords.x <= (maxDim.x + paddingX)
+                local withinY = localCoords.y >= (minDim.y - paddingY) and localCoords.y <= (maxDim.y + paddingY)
+                local withinZ = localCoords.z >= (minDim.z - paddingZ) and localCoords.z <= (maxDim.z + paddingZ)
 
-                if dz <= 0.9 and distance2D < nearestDistance then
-                    nearestDistance = distance2D
+                if withinX and withinY and withinZ and not seenTyres[tyreIndex] then
+                    seenTyres[tyreIndex] = true
+                    tyreIndices[#tyreIndices + 1] = tyreIndex
                 end
             end
         end
 
-        return nearestDistance <= 0.9
+        return tyreIndices
     end
 
     while true do
         Citizen.Wait(150)
 
-        if #currentSpikeStrips > 0 then
+        local spikeStrips = CollectActiveSpikeStrips()
+        if #spikeStrips > 0 then
             local vehicles = getVehiclesToCheck()
 
-            for i = #currentSpikeStrips, 1, -1 do
-                local spikeStrip = currentSpikeStrips[i]
-                if not DoesEntityExist(spikeStrip) then
-                    table.remove(currentSpikeStrips, i)
-                else
-                    local stripCoords = GetEntityCoords(spikeStrip)
+            for _, spikeStrip in ipairs(spikeStrips) do
+                if DoesEntityExist(spikeStrip) then
                     for _, vehicle in ipairs(vehicles) do
                         if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
                             local vehicleKey = getVehicleTrackingKey(vehicle)
 
                             if (recentlySpikedVehicles[vehicleKey] or 0) < GetGameTimer() then
-                                if isWheelOnSpikeStrip(vehicle, stripCoords) then
-                                    burstVehicleTyres(vehicle)
-                                    recentlySpikedVehicles[vehicleKey] = GetGameTimer() + 5000
+                                local hitTyres = getSpikeStripHitTyres(vehicle, spikeStrip)
+                                if #hitTyres > 0 then
+                                    burstVehicleTyres(vehicle, hitTyres)
+                                    recentlySpikedVehicles[vehicleKey] = GetGameTimer() + 1500
                                 end
                             end
                         end
@@ -4997,6 +5441,45 @@ Citizen.CreateThread(function()
         else
             Citizen.Wait(600)
         end
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        local playerPed = PlayerPedId()
+        local waitTime = 400
+
+        if role == "cop" and playerPed and playerPed ~= 0 and DoesEntityExist(playerPed) then
+            local playerCoords = GetEntityCoords(playerPed)
+            local nearestSpikeStrip = nil
+            local nearestDistance = 2.25
+
+            for _, spikeStrip in ipairs(CollectActiveSpikeStrips()) do
+                if DoesEntityExist(spikeStrip) then
+                    local stripCoords = GetEntityCoords(spikeStrip)
+                    local distance = #(playerCoords - stripCoords)
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearestSpikeStrip = spikeStrip
+                    end
+                end
+            end
+
+            if nearestSpikeStrip then
+                waitTime = 0
+                DisplayHelpText("Press ~INPUT_CONTEXT~ to recover spike strip")
+                if IsControlJustPressed(0, 38) then
+                    if DeleteTrackedSpikeStrip(nearestSpikeStrip) then
+                        TriggerServerEvent('cnr:recoverSpikeStrip')
+                    else
+                        ShowNotification("~r~Unable to recover spike strip right now.")
+                    end
+                    Citizen.Wait(250)
+                end
+            end
+        end
+
+        Citizen.Wait(waitTime)
     end
 end)
 

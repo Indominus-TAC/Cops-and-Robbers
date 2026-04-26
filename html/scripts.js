@@ -1684,6 +1684,29 @@ document.addEventListener('DOMContentLoaded', () => {
                             hideAdminPanel();
                         });
                     }
+                } else if (target.classList.contains('admin-spectate-btn')) {
+                    fetch(`https://${resName}/adminSpectatePlayer`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ targetId: targetId })
+                    }).then(resp => resp.json()).then(res => {
+                        console.log('[CNR_NUI_ADMIN] Spectate response:', res.error || (res.success ? 'Spectating.' : 'Failed.'));
+                        if (res.success) hideAdminPanel();
+                    });
+                } else if (target.classList.contains('admin-add-item-btn') || target.classList.contains('admin-remove-item-btn')) {
+                    const itemId = (prompt(`Enter item id for player ${targetId}`) || '').trim();
+                    if (!itemId) return;
+
+                    const quantityInput = prompt(`Enter quantity of ${itemId}`, '1');
+                    const quantity = Number.parseInt(quantityInput || '1', 10);
+                    if (!Number.isFinite(quantity) || quantity <= 0) return;
+
+                    const endpoint = target.classList.contains('admin-add-item-btn') ? 'adminAddInventoryItem' : 'adminRemoveInventoryItem';
+                    fetch(`https://${resName}/${endpoint}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ targetId: targetId, itemId, quantity })
+                    }).then(resp => resp.json()).then(res => {
+                        console.log(`[CNR_NUI_ADMIN] ${endpoint} response:`, res.error || (res.success ? 'Success.' : 'Failed.'));
+                    });
                 }
             }
         });
@@ -1712,6 +1735,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('admin-close-btn')?.addEventListener('click', hideAdminPanel);
+    document.getElementById('admin-toggle-noclip-btn')?.addEventListener('click', async function() {
+        const resName = CNRConfig.getResourceName();
+        const response = await fetch(`https://${resName}/adminToggleNoClip`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (result && result.success) {
+            this.innerHTML = result.enabled
+                ? '<span class="icon">🪽</span>Disable No Clip'
+                : '<span class="icon">🪽</span>No Clip';
+        }
+    });
+    document.getElementById('admin-toggle-invisible-btn')?.addEventListener('click', async function() {
+        const resName = CNRConfig.getResourceName();
+        const response = await fetch(`https://${resName}/adminToggleInvisible`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (result && result.success) {
+            this.innerHTML = result.enabled
+                ? '<span class="icon">👁️</span>Visible'
+                : '<span class="icon">👁️</span>Invisible';
+        }
+    });
+    document.getElementById('admin-stop-spectate-btn')?.addEventListener('click', async function() {
+        const resName = CNRConfig.getResourceName();
+        await fetch(`https://${resName}/adminStopSpectate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+    });
     const storeCloseButton = document.getElementById('close-btn');
     if (storeCloseButton) storeCloseButton.addEventListener('click', closeStoreMenu);
     const bountyCloseButton = document.getElementById('bounty-close-btn');
@@ -1787,6 +1846,15 @@ function showAdminPanel(playerList) {
             const teleportBtn = document.createElement('button');
             teleportBtn.innerHTML = '<span class="icon">➡️</span>TP to'; teleportBtn.className = 'admin-action-btn admin-teleport-btn';
             teleportBtn.dataset.targetId = player.serverId; actionsCell.appendChild(teleportBtn);
+            const spectateBtn = document.createElement('button');
+            spectateBtn.innerHTML = '<span class="icon">📺</span>Spectate'; spectateBtn.className = 'admin-action-btn admin-spectate-btn';
+            spectateBtn.dataset.targetId = player.serverId; actionsCell.appendChild(spectateBtn);
+            const addItemBtn = document.createElement('button');
+            addItemBtn.innerHTML = '<span class="icon">➕</span>+Item'; addItemBtn.className = 'admin-action-btn admin-add-item-btn';
+            addItemBtn.dataset.targetId = player.serverId; actionsCell.appendChild(addItemBtn);
+            const removeItemBtn = document.createElement('button');
+            removeItemBtn.innerHTML = '<span class="icon">➖</span>-Item'; removeItemBtn.className = 'admin-action-btn admin-remove-item-btn';
+            removeItemBtn.dataset.targetId = player.serverId; actionsCell.appendChild(removeItemBtn);
         });
     } else {
         playerListBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No players online or data unavailable.</td></tr>';

@@ -2019,6 +2019,8 @@ local supplementalWantedLevels = {
 
 Config.WantedSettings = Config.WantedSettings or {}
 Config.WantedSettings.levels = Config.WantedSettings.levels or supplementalWantedLevels
+Config.WantedSettings.safehouseDecayMultiplier = tonumber(Config.WantedSettings.safehouseDecayMultiplier) or 3
+Config.WantedSettings.safehouseRadius = tonumber(Config.WantedSettings.safehouseRadius) or 65.0
 
 for index, fallbackLevel in ipairs(supplementalWantedLevels) do
     local configuredLevel = Config.WantedSettings.levels[index]
@@ -2098,6 +2100,7 @@ Config.RobberHideouts = {
     {
         location = vector3(1395.2, 1141.9, 114.3),
         name = "Vinewood Hills Safehouse",
+        radius = 65.0,
         blipSprite = 40,
         blipColor = 1,
         services = {"weapon_storage", "vehicle_storage", "planning"}
@@ -2105,11 +2108,120 @@ Config.RobberHideouts = {
     {
         location = vector3(-1165.4, -1566.0, 4.4),
         name = "Vespucci Warehouse",
+        radius = 60.0,
         blipSprite = 40,
         blipColor = 1,
         services = {"weapon_storage", "vehicle_storage"}
+    },
+    {
+        location = vector3(-14.2, -1442.6, 31.1),
+        name = "South LS Hideout",
+        radius = 60.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"weapon_storage", "planning"}
+    },
+    {
+        location = vector3(1536.63, 3582.91, 38.73),
+        name = "Sandy Shores Hideout",
+        radius = 75.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"vehicle_storage", "planning"}
+    },
+    {
+        location = vector3(1943.45, 3150.58, 46.78),
+        name = "Grand Senora Desert Hideout",
+        radius = 70.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"weapon_storage", "vehicle_storage"}
+    },
+    {
+        location = vector3(139.53, 6366.54, 31.53),
+        name = "Paleto Bay Hideout",
+        radius = 70.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"vehicle_storage", "planning"}
+    },
+    {
+        location = vector3(2567.8, 4687.2, 34.1),
+        name = "Grapeseed Farm Safehouse",
+        radius = 70.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"weapon_storage", "planning"}
+    },
+    {
+        location = vector3(-2198.8, 4270.6, 49.2),
+        name = "Chumash Canyon Safehouse",
+        radius = 75.0,
+        blipSprite = 40,
+        blipColor = 1,
+        services = {"vehicle_storage", "planning"}
     }
 }
+
+Config.MedicalStores = Config.MedicalStores or {
+    {
+        id = "medical_store_central_ls",
+        location = vector4(307.62, -595.31, 43.29, 70.0),
+        model = "s_m_m_doctor_01",
+        name = "Medical Store",
+        blipName = "Central LS Medical Store",
+        storeType = "medical",
+        blipSprite = 61,
+        blipColor = 2,
+        items = { "firstaidkit", "medkit" }
+    },
+    {
+        id = "medical_store_mount_zonah",
+        location = vector4(-450.98, -339.29, 34.5, 84.0),
+        model = "s_m_m_doctor_01",
+        name = "Medical Store",
+        blipName = "Mount Zonah Medical Store",
+        storeType = "medical",
+        blipSprite = 61,
+        blipColor = 2,
+        items = { "firstaidkit", "medkit" }
+    },
+    {
+        id = "medical_store_sandy",
+        location = vector4(1836.56, 3678.34, 34.28, 212.0),
+        model = "s_m_m_doctor_01",
+        name = "Medical Store",
+        blipName = "Sandy Shores Medical Store",
+        storeType = "medical",
+        blipSprite = 61,
+        blipColor = 2,
+        items = { "firstaidkit", "medkit" }
+    },
+    {
+        id = "medical_store_paleto",
+        location = vector4(-248.08, 6332.72, 32.43, 223.0),
+        model = "s_m_m_doctor_01",
+        name = "Medical Store",
+        blipName = "Paleto Medical Store",
+        storeType = "medical",
+        blipSprite = 61,
+        blipColor = 2,
+        items = { "firstaidkit", "medkit" }
+    }
+}
+
+local existingNpcVendorIds = {}
+for _, vendor in ipairs(Config.NPCVendors or {}) do
+    if vendor and vendor.id then
+        existingNpcVendorIds[vendor.id] = true
+    end
+end
+
+for _, medicalStore in ipairs(Config.MedicalStores) do
+    if medicalStore and not existingNpcVendorIds[medicalStore.id] then
+        table.insert(Config.NPCVendors, medicalStore)
+    end
+end
 
 -- Bank teller locations
 Config.BankTellers = {

@@ -1362,6 +1362,61 @@ ReduceWantedLevel = function(playerId, amount)
     end
 end
 
+local function IsPlayerInsideRobberHideoutRadius(playerCoords)
+    if not playerCoords or type(Config.RobberHideouts) ~= "table" then
+        return false
+    end
+
+    local fallbackRadius = tonumber(Config.WantedSettings and Config.WantedSettings.safehouseRadius) or 65.0
+    for _, hideout in ipairs(Config.RobberHideouts) do
+        local hideoutCoords = nil
+
+        if hideout then
+            if hideout.location and hideout.location.x and hideout.location.y and hideout.location.z then
+                hideoutCoords = vector3(hideout.location.x, hideout.location.y, hideout.location.z)
+            elseif hideout.x and hideout.y and hideout.z then
+                hideoutCoords = vector3(hideout.x, hideout.y, hideout.z)
+            end
+        end
+
+        if hideoutCoords then
+            local radius = tonumber(hideout.radius) or fallbackRadius
+            if #(playerCoords - hideoutCoords) <= radius then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function ClearWantedLevelState(playerId, clearedByCop)
+    local pIdNum = tonumber(playerId)
+    if not pIdNum or not wantedPlayers[pIdNum] then
+        return
+    end
+
+    wantedPlayers[pIdNum] = {
+        wantedLevel = 0,
+        stars = 0,
+        lastCrimeTime = 0,
+        crimesCommitted = {}
+    }
+
+    SafeTriggerClientEvent('cnr:wantedLevelSync', pIdNum, wantedPlayers[pIdNum])
+    SafeTriggerClientEvent('cops_and_robbers:updateWantedDisplay', pIdNum, 0, 0)
+    SafeTriggerClientEvent('cnr:hideWantedNotification', pIdNum)
+
+    local chatMessage = clearedByCop and "Your wanted level was cleared because you were killed by police." or "You are no longer wanted."
+    SafeTriggerClientEvent('chat:addMessage', pIdNum, { args = {"^2Wanted", chatMessage} })
+
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            SafeTriggerClientEvent('cnr:updatePoliceBlip', copId, pIdNum, nil, 0, false)
+        end
+    end
+end
+
 PerformanceOptimizer.CreateOptimizedLoop(function() -- Wanted level decay with cop sight detection
     local currentTime = os.time()
     for playerIdStr, data in pairs(wantedPlayers) do 
@@ -1411,7 +1466,13 @@ PerformanceOptimizer.CreateOptimizedLoop(function() -- Wanted level decay with c
                     end
                     
                     if canDecay then
-                        ReduceWantedLevel(playerId, Config.WantedSettings.decayRatePoints)
+                        local decayAmount = tonumber(Config.WantedSettings.decayRatePoints) or 1
+                        if IsPlayerInsideRobberHideoutRadius(playerCoords) then
+                            local safehouseMultiplier = tonumber(Config.WantedSettings.safehouseDecayMultiplier) or 1
+                            decayAmount = math.max(decayAmount, math.floor(decayAmount * safehouseMultiplier))
+                        end
+
+                        ReduceWantedLevel(playerId, decayAmount)
                     end
                 end
         elseif SafeGetPlayerName(playerId) == nil then
@@ -4026,6 +4087,33 @@ AddEventHandler('onResourceStart', function(resourceName)
     end
 end)
 
+RegisterNetEvent('cnr:playerDeathState')
+AddEventHandler('cnr:playerDeathState', function(killerServerId)
+    local src = tonumber(source)
+    if not src or not IsPlayerRobber(src) then
+        return
+    end
+
+    local wantedData = wantedPlayers[src]
+    if not wantedData or (tonumber(wantedData.wantedLevel) or 0) <= 0 then
+        return
+    end
+
+    local killerId = tonumber(killerServerId) or 0
+    if killerId <= 0 or killerId == src or SafeGetPlayerName(killerId) == nil then
+        Log(string.format("Preserved wanted level for player %s after death (killer: %s).", src, tostring(killerServerId)), "info", "CNR_SERVER")
+        return
+    end
+
+    local killerData = GetCnrPlayerData(killerId)
+    if killerData and killerData.role == "cop" then
+        ClearWantedLevelState(src, true)
+        Log(string.format("Cleared wanted level for player %s after being killed by cop %s.", src, killerId), "info", "CNR_SERVER")
+    else
+        Log(string.format("Preserved wanted level for player %s after death by non-cop %s.", src, killerId), "info", "CNR_SERVER")
+    end
+end)
+
 -- Initialize bank account when player joins
 AddEventHandler('playerJoining', function()
     local src = source
@@ -4804,6 +4892,28 @@ AddEventHandler('cnr:useInventoryItem', function(itemId)
     TriggerClientEvent('cnr:showNotification', src, 'Used ' .. itemKey, 'success')
 end)
 
+RegisterNetEvent('cnr:recoverSpikeStrip')
+AddEventHandler('cnr:recoverSpikeStrip', function()
+    local src = tonumber(source)
+    if not src then
+        return
+    end
+
+    local pData = GetCnrPlayerData(src)
+    if not pData or (pData.role ~= "cop" and not IsPlayerAdmin(src)) then
+        TriggerClientEvent('cnr:showNotification', src, 'Only police can recover spike strips.', 'error')
+        return
+    end
+
+    local added, addErr = AddItemToPlayerInventory(src, 'spikestrip_item', 1)
+    if not added then
+        TriggerClientEvent('cnr:showNotification', src, addErr or 'Unable to recover spike strip.', 'error')
+        return
+    end
+
+    TriggerClientEvent('cnr:showNotification', src, 'Spike strip recovered.', 'success')
+end)
+
 RegisterNetEvent('cnr:dropInventoryItem')
 AddEventHandler('cnr:dropInventoryItem', function(itemId, quantity)
     local src = tonumber(source)
@@ -5173,6 +5283,74 @@ AddEventHandler('cnr:adminTeleportToPlayer', function(targetId)
         heading = targetHeading
     })
     TriggerClientEvent('cnr:showNotification', adminId, 'Teleported to player ' .. tostring(targetPlayerId), 'success')
+end)
+
+RegisterNetEvent('cnr:adminAddInventoryItem')
+AddEventHandler('cnr:adminAddInventoryItem', function(targetId, itemId, quantity)
+    local adminId = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+    local itemKey = tostring(itemId or ""):lower()
+    local amount = math.max(1, math.floor(tonumber(quantity) or 1))
+
+    if not IsPlayerAdmin(adminId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Admin access required.', 'error')
+        return
+    end
+
+    if not targetPlayerId or not IsValidPlayer(targetPlayerId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Target player not found.', 'error')
+        return
+    end
+
+    if itemKey == "" then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Enter a valid item id.', 'error')
+        return
+    end
+
+    local added, err = AddItemToPlayerInventory(targetPlayerId, itemKey, amount)
+    if not added then
+        TriggerClientEvent('cnr:showNotification', adminId, err or 'Unable to add item.', 'error')
+        return
+    end
+
+    local targetName = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId))
+    TriggerClientEvent('cnr:showNotification', adminId, string.format('Added %dx %s to %s.', amount, itemKey, targetName), 'success')
+    TriggerClientEvent('cnr:showNotification', targetPlayerId, string.format('An admin added %dx %s to your inventory.', amount, itemKey), 'info')
+    Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) added %dx %s to %s (ID: %s)", SafeGetPlayerName(adminId), adminId, amount, itemKey, targetName, targetPlayerId), Constants.LOG_LEVELS.INFO)
+end)
+
+RegisterNetEvent('cnr:adminRemoveInventoryItem')
+AddEventHandler('cnr:adminRemoveInventoryItem', function(targetId, itemId, quantity)
+    local adminId = tonumber(source)
+    local targetPlayerId = tonumber(targetId)
+    local itemKey = tostring(itemId or ""):lower()
+    local amount = math.max(1, math.floor(tonumber(quantity) or 1))
+
+    if not IsPlayerAdmin(adminId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Admin access required.', 'error')
+        return
+    end
+
+    if not targetPlayerId or not IsValidPlayer(targetPlayerId) then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Target player not found.', 'error')
+        return
+    end
+
+    if itemKey == "" then
+        TriggerClientEvent('cnr:showNotification', adminId, 'Enter a valid item id.', 'error')
+        return
+    end
+
+    local removed, err = RemoveItemFromPlayerInventory(targetPlayerId, itemKey, amount)
+    if not removed then
+        TriggerClientEvent('cnr:showNotification', adminId, err or 'Unable to remove item.', 'error')
+        return
+    end
+
+    local targetName = SafeGetPlayerName(targetPlayerId) or ("Player " .. tostring(targetPlayerId))
+    TriggerClientEvent('cnr:showNotification', adminId, string.format('Removed %dx %s from %s.', amount, itemKey, targetName), 'success')
+    TriggerClientEvent('cnr:showNotification', targetPlayerId, string.format('An admin removed %dx %s from your inventory.', amount, itemKey), 'warning')
+    Log(string.format("[CNR_ADMIN_LOG] %s (ID: %s) removed %dx %s from %s (ID: %s)", SafeGetPlayerName(adminId), adminId, amount, itemKey, targetName, targetPlayerId), Constants.LOG_LEVELS.INFO)
 end)
 
 -- Kick command
