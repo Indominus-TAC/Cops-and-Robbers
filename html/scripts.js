@@ -2116,7 +2116,7 @@ function buildPoliceLiveMapMarkers() {
                 { label: 'Speed', value: `${Math.round(Number(officer.speedMph) || 0)} mph` },
                 { label: 'Equipped', value: officer.equipped || 'Unarmed' },
                 { label: 'Vehicle', value: vehicleLabel },
-                { label: 'Coords', value: officer.coords ? `${Math.floor(officer.coords.x)}, ${Math.floor(officer.coords.y)}` : 'Unknown' }
+                { label: 'Location', value: officer.locationLabel || (officer.coords ? `${Math.floor(officer.coords.x)}, ${Math.floor(officer.coords.y)}` : 'Unknown') }
             ]
         });
     });
@@ -2139,6 +2139,7 @@ function buildPoliceLiveMapMarkers() {
             detailRows: [
                 { label: 'Status', value: call.status || 'Open' },
                 { label: 'Priority', value: call.priority || 'Medium' },
+                { label: 'Location', value: call.locationLabel || 'Unknown' },
                 { label: 'Requested By', value: call.createdByName || 'Unknown' },
                 { label: 'Backup', value: call.requestBackup ? 'Requested' : 'Not requested' },
                 { label: 'Urgency', value: call.urgent ? 'ASAP' : 'Standard' },
@@ -2166,7 +2167,7 @@ function buildPoliceLiveMapMarkers() {
                 { label: 'Wanted Level', value: String(suspect.wantedLevel || 0) },
                 { label: 'Stars', value: stars },
                 { label: 'Bounty', value: `$${formatCurrencyDisplay(suspect.bounty || 0)}` },
-                { label: 'Coords', value: suspect.coords ? `${Math.floor(suspect.coords.x)}, ${Math.floor(suspect.coords.y)}` : 'Unknown' }
+                { label: 'Location', value: suspect.locationLabel || (suspect.coords ? `${Math.floor(suspect.coords.x)}, ${Math.floor(suspect.coords.y)}` : 'Unknown') }
             ]
         });
     });
@@ -3159,6 +3160,15 @@ function showPoliceMenu(data = {}) {
                         </div>
                         <div id="police-cad-suspects-list" class="dispatch-list"></div>
                     </section>
+                    <section class="role-card role-scroll-section">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Player Directory</h2>
+                                <p>Quick ID roster for locating, messaging, and citing players.</p>
+                            </div>
+                        </div>
+                        <div id="police-player-directory" class="dispatch-list"></div>
+                    </section>
                 </aside>
             </div>
         `;
@@ -3206,9 +3216,16 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
             ${detail ? `<p class="dispatch-card-body">${escapeHtml(detail)}</p>` : ''}
         </article>
     `;
-    const formatLocation = (coords) => (
-        coords && Number.isFinite(Number(coords.x)) && Number.isFinite(Number(coords.y))
-            ? `${Math.floor(Number(coords.x))}, ${Math.floor(Number(coords.y))}`
+    const formatLocation = (entryOrCoords) => (
+        entryOrCoords?.locationLabel
+            ? entryOrCoords.locationLabel
+            : entryOrCoords && Number.isFinite(Number(entryOrCoords.x)) && Number.isFinite(Number(entryOrCoords.y))
+                ? `${Math.floor(Number(entryOrCoords.x))}, ${Math.floor(Number(entryOrCoords.y))}`
+                : 'Unknown'
+    );
+    const formatTimestamp = (timestamp) => (
+        timestamp
+            ? new Date(Number(timestamp) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
             : 'Unknown'
     );
 
@@ -3233,7 +3250,7 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
         const officers = latestPoliceCadData.officers || [];
         unitsList.innerHTML = officers.length > 0
             ? officers.map((officer) => {
-                const coords = formatLocation(officer.coords);
+                const coords = formatLocation(officer);
                 const vehicleInfo = officer.vehicleModel
                     ? `${officer.vehicleType || 'Vehicle'}: ${officer.vehicleModel}`
                     : 'On foot';
@@ -3266,9 +3283,22 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
         const calls = latestPoliceCadData.calls || [];
         callsList.innerHTML = calls.length > 0
             ? calls.map((call) => {
-                const location = formatLocation(call.coords);
+                const location = formatLocation(call);
                 const priorityClass = String(call.priority || 'medium').toLowerCase();
                 const detail = call.details || 'No additional notes entered.';
+                const history = Array.isArray(call.history) ? call.history : [];
+                const historyHtml = history.length > 0
+                    ? `
+                        <div class="dispatch-history">
+                            ${history.slice().reverse().map((entry) => `
+                                <div class="dispatch-history-item">
+                                    <span class="dispatch-history-status">${escapeHtml(entry.status || 'Update')}</span>
+                                    <span class="dispatch-history-meta">${escapeHtml(`${entry.byName || 'Unknown'} • ${formatTimestamp(entry.timestamp)}`)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `
+                    : '';
                 return `
                     <article class="dispatch-card dispatch-card--call">
                         <div class="dispatch-card-header">
@@ -3285,6 +3315,7 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
                             ${call.urgent ? renderChip('ASAP', 'danger') : ''}
                         </div>
                         <p class="dispatch-card-body">${escapeHtml(detail)}</p>
+                        ${historyHtml}
                         <div class="dispatch-action-row">
                             <button class="menu-btn cad-status-btn" data-call-id="${call.id}" data-status="En Route">En Route</button>
                             <button class="menu-btn cad-status-btn" data-call-id="${call.id}" data-status="On Scene">On Scene</button>
@@ -3303,6 +3334,7 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
             ? suspects.map((suspect) => {
                 const starCount = Math.min(Number(suspect.wantedStars) || 0, 5);
                 const stars = starCount > 0 ? '★'.repeat(starCount) : 'No stars';
+                const location = formatLocation(suspect);
                 return `
                     <article class="dispatch-card">
                         <div class="dispatch-card-header">
@@ -3315,11 +3347,38 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
                         <div class="dispatch-chip-row">
                             ${renderChip(`Bounty $${formatCurrencyDisplay(suspect.bounty || 0)}`, 'warning')}
                             ${renderChip(`Heat ${suspect.wantedLevel || 0}`)}
+                            ${renderChip(location)}
                         </div>
                     </article>
                 `;
             }).join('')
             : renderEmptyCard('No wanted suspects right now.', 'When suspects build heat, they will show up here.');
+    }
+
+    const playerDirectory = document.getElementById('police-player-directory');
+    if (playerDirectory) {
+        const players = latestPoliceCadData.players || [];
+        playerDirectory.innerHTML = players.length > 0
+            ? players.map((player) => `
+                <article class="dispatch-card dispatch-card--roster">
+                    <div class="dispatch-card-header">
+                        <div>
+                            <h3 class="dispatch-card-title">${escapeHtml(`${player.name || 'Unknown'} (#${player.serverId || '?'})`)}</h3>
+                            <p class="dispatch-card-subtitle">${escapeHtml(player.role || 'citizen')}</p>
+                        </div>
+                        <span class="dispatch-pill">ID ${escapeHtml(String(player.serverId || '?'))}</span>
+                    </div>
+                    <div class="dispatch-chip-row">
+                        ${renderChip(`$${formatCurrencyDisplay(player.cash || 0)}`)}
+                        ${renderChip(player.role === 'cop' ? 'Cop' : player.role === 'robber' ? 'Robber' : 'Civilian', player.role === 'cop' ? 'cop' : player.role === 'robber' ? 'warning' : '')}
+                    </div>
+                    <div class="dispatch-action-row">
+                        <button class="menu-btn police-roster-fill-btn" data-player-id="${player.serverId}">Use ID</button>
+                        <button class="menu-btn police-roster-lookup-btn" data-player-id="${player.serverId}">Look Up</button>
+                    </div>
+                </article>
+            `).join('')
+            : renderEmptyCard('No online players found.', 'Connected players will appear here.');
     }
 
     const selectedReason = latestCitationReasons.find(reason => reason.id === (citationSelect && citationSelect.value));
@@ -3497,6 +3556,26 @@ function setupPoliceMenuListeners() {
     const policeMenu = document.getElementById('police-menu');
     if (policeMenu && !policeMenu.hasCadListener) {
         policeMenu.addEventListener('click', async (event) => {
+            const rosterButton = event.target.closest('.police-roster-fill-btn, .police-roster-lookup-btn');
+            if (rosterButton) {
+                const playerId = parseInt(rosterButton.dataset.playerId || '0');
+                if (!playerId) return;
+
+                ['police-lookup-player-id', 'police-text-target-id', 'police-citation-target-id'].forEach((inputId) => {
+                    const input = document.getElementById(inputId);
+                    if (input) {
+                        input.value = playerId;
+                    }
+                });
+
+                if (rosterButton.classList.contains('police-roster-lookup-btn')) {
+                    document.getElementById('police-lookup-btn')?.click();
+                } else {
+                    showToast(`Loaded player #${playerId} into police actions.`, 'info');
+                }
+                return;
+            }
+
             const statusButton = event.target.closest('.cad-status-btn');
             if (!statusButton) return;
 

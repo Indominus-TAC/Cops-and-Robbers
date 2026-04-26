@@ -616,6 +616,34 @@ local function ResolveVehicleDisplayLabel(vehicle)
     return vehicleType, modelName
 end
 
+local function BuildStreetLabelFromCoords(coords)
+    if not coords or coords.x == nil or coords.y == nil or coords.z == nil then
+        return "Unknown"
+    end
+
+    if type(GetStreetNameAtCoord) ~= "function" or type(GetStreetNameFromHashKey) ~= "function" then
+        return string.format("%d, %d", math.floor(coords.x), math.floor(coords.y))
+    end
+
+    local primaryHash, crossingHash = GetStreetNameAtCoord(coords.x + 0.0, coords.y + 0.0, coords.z + 0.0)
+    local primaryName = (primaryHash and primaryHash ~= 0) and GetStreetNameFromHashKey(primaryHash) or ""
+    local crossingName = (crossingHash and crossingHash ~= 0) and GetStreetNameFromHashKey(crossingHash) or ""
+
+    if primaryName ~= "" and crossingName ~= "" then
+        return string.format("%s / %s", primaryName, crossingName)
+    end
+
+    if primaryName ~= "" then
+        return primaryName
+    end
+
+    if crossingName ~= "" then
+        return crossingName
+    end
+
+    return string.format("%d, %d", math.floor(coords.x), math.floor(coords.y))
+end
+
 local function EnhancePoliceCadPayload(cadData)
     if type(cadData) ~= "table" then
         return cadData
@@ -623,8 +651,9 @@ local function EnhancePoliceCadPayload(cadData)
 
     local enhancedPayload = {
         officers = {},
-        calls = cadData.calls or {},
-        suspects = cadData.suspects or {},
+        calls = {},
+        suspects = {},
+        players = {},
         generatedAt = cadData.generatedAt or os.time()
     }
 
@@ -659,7 +688,35 @@ local function EnhancePoliceCadPayload(cadData)
             end
         end
 
+        enhancedOfficer.locationLabel = BuildStreetLabelFromCoords(enhancedOfficer.coords)
+
         enhancedPayload.officers[#enhancedPayload.officers + 1] = enhancedOfficer
+    end
+
+    for _, call in ipairs(cadData.calls or {}) do
+        local enhancedCall = {}
+        for key, value in pairs(call) do
+            enhancedCall[key] = value
+        end
+        enhancedCall.locationLabel = BuildStreetLabelFromCoords(enhancedCall.coords)
+        enhancedPayload.calls[#enhancedPayload.calls + 1] = enhancedCall
+    end
+
+    for _, suspect in ipairs(cadData.suspects or {}) do
+        local enhancedSuspect = {}
+        for key, value in pairs(suspect) do
+            enhancedSuspect[key] = value
+        end
+        enhancedSuspect.locationLabel = BuildStreetLabelFromCoords(enhancedSuspect.coords)
+        enhancedPayload.suspects[#enhancedPayload.suspects + 1] = enhancedSuspect
+    end
+
+    for _, playerEntry in ipairs(cadData.players or {}) do
+        local enhancedPlayer = {}
+        for key, value in pairs(playerEntry) do
+            enhancedPlayer[key] = value
+        end
+        enhancedPayload.players[#enhancedPayload.players + 1] = enhancedPlayer
     end
 
     return enhancedPayload
@@ -3784,6 +3841,76 @@ function RemoveHideoutBlips()
     hideoutBlips = {}
     isHideoutVisible = false
 end
+
+local function GetRobberSafehouseState(playerCoords)
+    local fallbackRadius = tonumber(Config.WantedSettings and Config.WantedSettings.safehouseRadius) or 65.0
+    local nearestHideout = nil
+    local nearestCoords = nil
+    local nearestRadius = fallbackRadius
+    local nearestDistance = math.huge
+    local activeHideout = nil
+
+    for _, hideout in ipairs(Config.RobberHideouts or {}) do
+        local hideoutCoords = GetEntryCoords(hideout)
+        if hideoutCoords then
+            local hideoutRadius = tonumber(hideout.radius) or fallbackRadius
+            local distance = #(playerCoords - hideoutCoords)
+
+            if distance < nearestDistance then
+                nearestHideout = hideout
+                nearestCoords = hideoutCoords
+                nearestRadius = hideoutRadius
+                nearestDistance = distance
+            end
+
+            if distance <= hideoutRadius then
+                activeHideout = {
+                    name = hideout.name or "Robber Safehouse",
+                    coords = hideoutCoords,
+                    radius = hideoutRadius,
+                    distance = distance
+                }
+            end
+        end
+    end
+
+    return activeHideout, nearestHideout, nearestCoords, nearestRadius, nearestDistance
+end
+
+Citizen.CreateThread(function()
+    while true do
+        local sleepMs = 1500
+
+        if g_isPlayerPedReady and role == "robber" then
+            local playerPed = PlayerPedId()
+            if playerPed and playerPed ~= 0 and DoesEntityExist(playerPed) then
+                local playerCoords = GetEntityCoords(playerPed)
+                local activeHideout, nearestHideout, nearestCoords, nearestRadius, nearestDistance = GetRobberSafehouseState(playerCoords)
+
+                if nearestHideout and nearestCoords and nearestDistance <= math.max((nearestRadius or 65.0) + 120.0, 180.0) then
+                    sleepMs = 0
+                    DrawMarker(1, nearestCoords.x, nearestCoords.y, nearestCoords.z - 1.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, (nearestRadius or 65.0) * 2.0, (nearestRadius or 65.0) * 2.0, 1.6, 220, 60, 60, 72, false, false, 2, false, nil, nil, false)
+                    DrawMarker(1, nearestCoords.x, nearestCoords.y, nearestCoords.z - 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.2, 3.2, 1.1, 255, 255, 255, 120, false, false, 2, false, nil, nil, false)
+                end
+
+                if activeHideout and (not isCurrentlyInSafeZone or currentSafeZoneName ~= activeHideout.name) then
+                    isCurrentlyInSafeZone = true
+                    currentSafeZoneName = activeHideout.name
+                    ShowNotification(string.format("~g~Safehouse bonus active at %s. Wanted level decays faster here.", currentSafeZoneName))
+                elseif not activeHideout and isCurrentlyInSafeZone then
+                    ShowNotification(string.format("~y~You left %s. Wanted decay is back to normal.", currentSafeZoneName ~= "" and currentSafeZoneName or "the safehouse"))
+                    isCurrentlyInSafeZone = false
+                    currentSafeZoneName = ""
+                end
+            end
+        elseif isCurrentlyInSafeZone then
+            isCurrentlyInSafeZone = false
+            currentSafeZoneName = ""
+        end
+
+        Citizen.Wait(sleepMs)
+    end
+end)
 
 -- ====================================================================
 -- Client-Side Jail System Logic

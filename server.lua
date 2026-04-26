@@ -3288,23 +3288,28 @@ end))
 RegisterServerEvent('cnr:checkAdminStatus')
 RegisterNetEvent('cnr:checkAdminStatus')
 AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler('cnr:checkAdminStatus', function(playerId)
-    local pData = GetCnrPlayerData(playerId)
+    local src = tonumber(source) or tonumber(playerId)
+    if not src or src <= 0 then
+        return
+    end
+
+    local pData = GetCnrPlayerData(src)
     
     if not pData then
-        Log(string.format("Admin status check failed - no player data for %s", playerId), "warn", "CNR_SERVER")
+        Log(string.format("Admin status check failed - no player data for %s", src), "warn", "CNR_SERVER")
         return
     end
     
-    if IsPlayerAdmin(playerId) then
-        TriggerClientEvent('cnr:showAdminPanel', playerId, BuildAdminPlayerList(), BuildAdminLiveMapPayload())
-        Log(string.format("Admin panel opened for player %s", playerId), "info", "CNR_SERVER")
+    if IsPlayerAdmin(src) then
+        TriggerClientEvent('cnr:showAdminPanel', src, BuildAdminPlayerList(), BuildAdminLiveMapPayload())
+        Log(string.format("Admin panel opened for player %s", src), "info", "CNR_SERVER")
     else
         if pData.role == "cop" then
-            TriggerClientEvent('cnr:showPoliceMenu', playerId)
+            TriggerClientEvent('cnr:showPoliceMenu', src)
         elseif pData.role == "robber" then
-            TriggerClientEvent('cnr:showRobberMenu', playerId)
+            TriggerClientEvent('cnr:showRobberMenu', src)
         else
-            SafeTriggerClientEvent('cnr:showNotification', playerId, "~r~No special menu available for your role.")
+            SafeTriggerClientEvent('cnr:showNotification', src, "~r~No special menu available for your role.")
         end
     end
 end))
@@ -4047,6 +4052,17 @@ local function BuildOfficerCadSnapshot(officerId)
 end
 
 local function BuildCadCallSnapshot(callId, callData)
+    local history = {}
+    for _, entry in ipairs(callData.history or {}) do
+        history[#history + 1] = {
+            status = entry.status or "Open",
+            by = entry.by,
+            byName = entry.byName,
+            details = entry.details or "",
+            timestamp = entry.timestamp or callData.updatedAt or callData.createdAt or os.time()
+        }
+    end
+
     return {
         id = callId,
         title = callData.title or ("Call #" .. tostring(callId)),
@@ -4061,7 +4077,8 @@ local function BuildCadCallSnapshot(callId, callData)
         urgent = callData.urgent == true,
         createdAt = callData.createdAt,
         updatedAt = callData.updatedAt,
-        coords = CloneVectorCoords(callData.coords)
+        coords = CloneVectorCoords(callData.coords),
+        history = history
     }
 end
 
@@ -4095,11 +4112,14 @@ local function BuildPoliceCadPayload()
         officers = {},
         calls = {},
         suspects = BuildWantedCadSnapshot(),
+        players = BuildAdminPlayerList(),
         generatedAt = os.time()
     }
 
-    for copId, _ in pairs(copsOnDuty) do
-        if SafeGetPlayerName(copId) ~= nil then
+    for _, playerId in ipairs(GetPlayers()) do
+        local copId = tonumber(playerId)
+        local copData = copId and GetCnrPlayerData(copId) or nil
+        if copId and copData and copData.role == "cop" and SafeGetPlayerName(copId) ~= nil then
             table.insert(payload.officers, BuildOfficerCadSnapshot(copId))
         end
     end
@@ -4126,16 +4146,20 @@ local function PushPoliceCadUpdate(targetPlayerId)
         return
     end
 
-    for copId, _ in pairs(copsOnDuty) do
-        if SafeGetPlayerName(copId) ~= nil then
+    for _, playerId in ipairs(GetPlayers()) do
+        local copId = tonumber(playerId)
+        local copData = copId and GetCnrPlayerData(copId) or nil
+        if copId and copData and copData.role == "cop" and SafeGetPlayerName(copId) ~= nil then
             TriggerClientEvent('cnr:receivePoliceCadData', copId, false, cadPayload, Config.CitationReasons or {})
         end
     end
 end
 
 local function BroadcastPoliceDispatchUpdate(message)
-    for copId, _ in pairs(copsOnDuty) do
-        if SafeGetPlayerName(copId) ~= nil then
+    for _, playerId in ipairs(GetPlayers()) do
+        local copId = tonumber(playerId)
+        local copData = copId and GetCnrPlayerData(copId) or nil
+        if copId and copData and copData.role == "cop" and SafeGetPlayerName(copId) ~= nil then
             TriggerClientEvent('cnr:showNotification', copId, message, 'warning')
         end
     end
@@ -4146,20 +4170,32 @@ local function CreateCadCall(creatorId, title, details, priority, requestBackup,
     nextCadCallId = nextCadCallId + 1
     _G.nextCadCallId = nextCadCallId
 
+    local now = os.time()
+    local creatorName = SafeGetPlayerName(creatorId) or ("Officer " .. tostring(creatorId))
+
     activeCadCalls[callId] = {
         title = title,
         details = details,
         priority = priority,
         status = "Open",
         createdBy = creatorId,
-        createdByName = SafeGetPlayerName(creatorId) or ("Officer " .. tostring(creatorId)),
+        createdByName = creatorName,
         updatedBy = creatorId,
-        updatedByName = SafeGetPlayerName(creatorId) or ("Officer " .. tostring(creatorId)),
+        updatedByName = creatorName,
         requestBackup = requestBackup == true,
         urgent = urgent == true,
-        createdAt = os.time(),
-        updatedAt = os.time(),
-        coords = coords
+        createdAt = now,
+        updatedAt = now,
+        coords = coords,
+        history = {
+            {
+                status = "Open",
+                by = creatorId,
+                byName = creatorName,
+                details = details or "",
+                timestamp = now
+            }
+        }
     }
 
     return callId
@@ -4171,17 +4207,38 @@ local function UpdateCadCall(callId, officerId, newStatus, details)
         return false
     end
 
+    local nextStatus = cadCall.status or "Open"
     if newStatus and newStatus ~= "" then
-        cadCall.status = newStatus
+        nextStatus = newStatus
     end
     if details ~= nil and details ~= "" then
         cadCall.details = details
     end
 
+    cadCall.status = nextStatus
     cadCall.updatedAt = os.time()
     cadCall.updatedBy = officerId
     cadCall.updatedByName = SafeGetPlayerName(officerId) or ("Officer " .. tostring(officerId))
-    return true
+    cadCall.history = cadCall.history or {}
+    cadCall.history[#cadCall.history + 1] = {
+        status = nextStatus,
+        by = officerId,
+        byName = cadCall.updatedByName,
+        details = cadCall.details or "",
+        timestamp = cadCall.updatedAt
+    }
+
+    local result = {
+        status = nextStatus,
+        removed = false
+    }
+
+    if nextStatus == "Resolved" then
+        activeCadCalls[callId] = nil
+        result.removed = true
+    end
+
+    return result
 end
 
 RegisterNetEvent('cnr:requestPoliceAssistance')
@@ -4315,8 +4372,13 @@ AddEventHandler('cnr:updateCadCallStatus', function(callId, status, details)
         end
     end
 
-    UpdateCadCall(normalizedCallId, src, normalizedStatus, tostring(details or ""):sub(1, 240))
-    BroadcastPoliceDispatchUpdate(string.format("CAD call #%d updated to %s.", normalizedCallId, activeCadCalls[normalizedCallId].status))
+    local updateResult = UpdateCadCall(normalizedCallId, src, normalizedStatus, tostring(details or ""):sub(1, 240))
+    if not updateResult then
+        TriggerClientEvent('cnr:showNotification', src, 'Unable to update that CAD call.', 'error')
+        return
+    end
+
+    BroadcastPoliceDispatchUpdate(string.format("CAD call #%d updated to %s.", normalizedCallId, updateResult.status or normalizedStatus or "Open"))
     PushPoliceCadUpdate()
     TriggerClientEvent('cnr:showNotification', src, string.format('Updated CAD call #%d.', normalizedCallId), 'success')
 end)

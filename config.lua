@@ -2023,7 +2023,7 @@ local supplementalWantedLevels = {
 
 Config.WantedSettings = Config.WantedSettings or {}
 Config.WantedSettings.levels = Config.WantedSettings.levels or supplementalWantedLevels
-Config.WantedSettings.safehouseDecayMultiplier = tonumber(Config.WantedSettings.safehouseDecayMultiplier) or 3
+Config.WantedSettings.safehouseDecayMultiplier = tonumber(Config.WantedSettings.safehouseDecayMultiplier) or 6
 Config.WantedSettings.safehouseRadius = tonumber(Config.WantedSettings.safehouseRadius) or 65.0
 Config.CadSettings = Config.CadSettings or {
     refreshIntervalMs = 5000,
