@@ -2477,6 +2477,14 @@ body::before {
     text-align: right;
 }
 
+.role-card--featured {
+    min-height: 360px;
+}
+
+.dispatch-list--featured {
+    max-height: 420px;
+}
+
 /* ==========================================================================
    Player Inventory System Styles
    ========================================================================== */

@@ -3293,24 +3293,25 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
         return
     end
 
+    if IsPlayerAdmin(src) then
+        TriggerClientEvent('cnr:showAdminPanel', src, BuildAdminPlayerList(), BuildAdminLiveMapPayload())
+        Log(string.format("Admin panel opened for player %s", src), "info", "CNR_SERVER")
+        return
+    end
+
     local pData = GetCnrPlayerData(src)
     
     if not pData then
         Log(string.format("Admin status check failed - no player data for %s", src), "warn", "CNR_SERVER")
         return
     end
-    
-    if IsPlayerAdmin(src) then
-        TriggerClientEvent('cnr:showAdminPanel', src, BuildAdminPlayerList(), BuildAdminLiveMapPayload())
-        Log(string.format("Admin panel opened for player %s", src), "info", "CNR_SERVER")
+
+    if pData.role == "cop" then
+        TriggerClientEvent('cnr:showPoliceMenu', src)
+    elseif pData.role == "robber" then
+        TriggerClientEvent('cnr:showRobberMenu', src)
     else
-        if pData.role == "cop" then
-            TriggerClientEvent('cnr:showPoliceMenu', src)
-        elseif pData.role == "robber" then
-            TriggerClientEvent('cnr:showRobberMenu', src)
-        else
-            SafeTriggerClientEvent('cnr:showNotification', src, "~r~No special menu available for your role.")
-        end
+        SafeTriggerClientEvent('cnr:showNotification', src, "~r~No special menu available for your role.")
     end
 end))
 

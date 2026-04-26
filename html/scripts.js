@@ -1883,12 +1883,10 @@ function formatTime(seconds) {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
-const LIVE_MAP_BASE_WIDTH = 1126.69;
-const LIVE_MAP_BASE_HEIGHT = 600;
-const LIVE_MAP_X_SCALE = 0.05030;
-const LIVE_MAP_Y_SCALE = -0.05030;
-const LIVE_MAP_X_OFFSET = -486.97;
-const LIVE_MAP_Y_OFFSET = 408.9;
+const LIVE_MAP_WORLD_MIN_X = -4200;
+const LIVE_MAP_WORLD_MAX_X = 4500;
+const LIVE_MAP_WORLD_MIN_Y = -4200;
+const LIVE_MAP_WORLD_MAX_Y = 8500;
 
 let latestAdminLiveMapData = { players: [], generatedAt: 0 };
 let adminLiveMapRefreshInterval = null;
@@ -1927,10 +1925,10 @@ function worldCoordsToLiveMapPosition(coords) {
         return null;
     }
 
-    const pixelX = (LIVE_MAP_X_SCALE * Number(coords.x)) + LIVE_MAP_X_OFFSET;
-    const pixelY = (LIVE_MAP_Y_SCALE * Number(coords.y)) + LIVE_MAP_Y_OFFSET;
-    const left = (pixelX / LIVE_MAP_BASE_WIDTH) * 100;
-    const top = (pixelY / LIVE_MAP_BASE_HEIGHT) * 100;
+    const normalizedX = (Number(coords.x) - LIVE_MAP_WORLD_MIN_X) / (LIVE_MAP_WORLD_MAX_X - LIVE_MAP_WORLD_MIN_X);
+    const normalizedY = (Number(coords.y) - LIVE_MAP_WORLD_MIN_Y) / (LIVE_MAP_WORLD_MAX_Y - LIVE_MAP_WORLD_MIN_Y);
+    const left = normalizedX * 100;
+    const top = (1 - normalizedY) * 100;
 
     if (left < -8 || left > 108 || top < -8 || top > 108) {
         return null;
@@ -2469,13 +2467,15 @@ function closeInventoryUI() {
 function updateInventoryPlayerInfo() {
     const cashElement = document.getElementById('inventory-player-cash-amount');
     const levelElement = document.getElementById('inventory-player-level-text');
+    const resolvedCash = dataNumber(window.playerInfo?.cash, window.playerInfo?.playerCash, window.currentPlayerInfo?.cash, window.currentPlayerInfo?.playerCash, previousCash, 0);
+    const resolvedLevel = dataNumber(window.playerInfo?.level, window.playerInfo?.playerLevel, window.currentPlayerInfo?.level, window.currentPlayerInfo?.playerLevel, 1);
     
-    if (cashElement && window.playerInfo && window.playerInfo.cash !== undefined) {
-        cashElement.textContent = `$${window.playerInfo.cash.toLocaleString()}`;
+    if (cashElement) {
+        cashElement.textContent = `$${Number(resolvedCash || 0).toLocaleString()}`;
     }
     
-    if (levelElement && window.playerInfo && window.playerInfo.level !== undefined) {
-        levelElement.textContent = `Level ${window.playerInfo.level}`;
+    if (levelElement) {
+        levelElement.textContent = `Level ${Number(resolvedLevel || 1)}`;
     }
 }
 
@@ -2489,6 +2489,18 @@ async function requestPlayerInventoryForUI() {
         });
         
         const result = await response.json();
+        if (result?.playerInfo) {
+            window.playerInfo = {
+                ...(window.playerInfo || {}),
+                ...result.playerInfo
+            };
+            window.currentPlayerInfo = {
+                ...(window.currentPlayerInfo || {}),
+                ...result.playerInfo
+            };
+            updateInventoryPlayerInfo();
+        }
+
         if (result && result.success) {
             updateInventoryUI(result.inventory || {});
             updateEquippedItemsUI(result.equippedItems || []);
@@ -3057,6 +3069,15 @@ function showPoliceMenu(data = {}) {
             </div>
             <div class="role-menu-layout">
                 <div class="role-menu-main">
+                    <section class="role-card role-card--featured role-scroll-section">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Active CAD Calls</h2>
+                                <p>Current scenes, priority levels, response history, and backup traffic.</p>
+                            </div>
+                        </div>
+                        <div id="police-cad-calls-list" class="dispatch-list dispatch-list--featured"></div>
+                    </section>
                     <section class="role-card role-live-map-card">
                         <div class="role-card-heading">
                             <div>
@@ -3141,15 +3162,6 @@ function showPoliceMenu(data = {}) {
                             </div>
                         </div>
                         <div id="police-cad-units-list" class="dispatch-list"></div>
-                    </section>
-                    <section class="role-card role-scroll-section">
-                        <div class="role-card-heading">
-                            <div>
-                                <h2>Active CAD Calls</h2>
-                                <p>Current scenes, priority levels, and response state.</p>
-                            </div>
-                        </div>
-                        <div id="police-cad-calls-list" class="dispatch-list"></div>
                     </section>
                     <section class="role-card role-scroll-section">
                         <div class="role-card-heading">
@@ -3369,7 +3381,6 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
                         <span class="dispatch-pill">ID ${escapeHtml(String(player.serverId || '?'))}</span>
                     </div>
                     <div class="dispatch-chip-row">
-                        ${renderChip(`$${formatCurrencyDisplay(player.cash || 0)}`)}
                         ${renderChip(player.role === 'cop' ? 'Cop' : player.role === 'robber' ? 'Robber' : 'Civilian', player.role === 'cop' ? 'cop' : player.role === 'robber' ? 'warning' : '')}
                     </div>
                     <div class="dispatch-action-row">

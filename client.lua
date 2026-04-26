@@ -83,6 +83,7 @@ local playerCash = 0
 local currentSpikeStrips = {}
 local spikeStripModelHash = GetHashKey("p_ld_stinger_s")
 local pendingAdminLiveMapCallbacks = {}
+local activePoliceDispatchBlips = {}
 local playerStats = {
     heists = 0,
     arrests = 0,
@@ -720,6 +721,61 @@ local function EnhancePoliceCadPayload(cadData)
     end
 
     return enhancedPayload
+end
+
+local function RemovePoliceDispatchBlip(callId)
+    local normalizedCallId = tonumber(callId)
+    local blip = normalizedCallId and activePoliceDispatchBlips[normalizedCallId] or nil
+    if blip and DoesBlipExist(blip) then
+        RemoveBlip(blip)
+    end
+    if normalizedCallId then
+        activePoliceDispatchBlips[normalizedCallId] = nil
+    end
+end
+
+local function SyncPoliceDispatchBlips(cadCalls)
+    if role ~= "cop" then
+        for callId, _ in pairs(activePoliceDispatchBlips) do
+            RemovePoliceDispatchBlip(callId)
+        end
+        return
+    end
+
+    local activeCallIds = {}
+    for _, call in ipairs(cadCalls or {}) do
+        local callId = tonumber(call and call.id)
+        local coords = call and call.coords or nil
+        if callId and coords and coords.x and coords.y and coords.z and (call.requestBackup == true or call.urgent == true) then
+            activeCallIds[callId] = true
+
+            local blip = activePoliceDispatchBlips[callId]
+            if not blip or not DoesBlipExist(blip) then
+                blip = AddBlipForCoord(coords.x + 0.0, coords.y + 0.0, coords.z + 0.0)
+                SetBlipSprite(blip, 161)
+                SetBlipScale(blip, call.urgent and 1.35 or 1.15)
+                SetBlipColour(blip, call.urgent and 1 or 5)
+                SetBlipAlpha(blip, 255)
+                SetBlipAsShortRange(blip, false)
+                SetBlipHighDetail(blip, true)
+                SetBlipBright(blip, true)
+                SetBlipFlashes(blip, true)
+                SetBlipFlashInterval(blip, call.urgent and 350 or 600)
+                BeginTextCommandSetBlipName("STRING")
+                AddTextComponentString(string.format("%s #%d", call.urgent and "🚨 Urgent Backup" or "🚨 Backup Request", callId))
+                EndTextCommandSetBlipName(blip)
+                activePoliceDispatchBlips[callId] = blip
+            end
+
+            SetBlipCoords(blip, coords.x + 0.0, coords.y + 0.0, coords.z + 0.0)
+        end
+    end
+
+    for callId, _ in pairs(activePoliceDispatchBlips) do
+        if not activeCallIds[callId] then
+            RemovePoliceDispatchBlip(callId)
+        end
+    end
 end
 
 local function GetRoleSpawnHeading(playerRole)
@@ -2772,6 +2828,7 @@ end)
 
 AddEventHandler('cnr:receivePoliceCadData', function(requestId, cadData, citationReasons)
     local enhancedCadData = EnhancePoliceCadPayload(cadData or {})
+    SyncPoliceDispatchBlips(enhancedCadData.calls or {})
     local callback = requestId and pendingPoliceCadCallbacks[requestId] or nil
 
     if callback then
@@ -2872,6 +2929,10 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
 
     if playerData then
         playerData.role = role
+    end
+
+    if role ~= "cop" then
+        SyncPoliceDispatchBlips({})
     end
 
     UpdateActivityBlips()
@@ -5216,6 +5277,13 @@ end)
 -- NUI callbacks for inventory system
 RegisterNUICallback('getPlayerInventoryForUI', function(data, cb)
     Log("NUI requested inventory via getPlayerInventoryForUI", "info", "CNR_INV_CLIENT")
+    local playerInfo = {
+        cash = playerData.money or playerCash or 0,
+        playerCash = playerData.money or playerCash or 0,
+        level = playerData.level or 1,
+        playerLevel = playerData.level or 1,
+        role = playerData.role or role or "citizen"
+    }
     
     if localPlayerInventory and next(localPlayerInventory) then
         local equippedItems = {}
@@ -5237,7 +5305,8 @@ RegisterNUICallback('getPlayerInventoryForUI', function(data, cb)
         cb({
             success = true,
             inventory = localPlayerInventory,
-            equippedItems = equippedItems
+            equippedItems = equippedItems,
+            playerInfo = playerInfo
         })
     else
         TriggerServerEvent('cnr:requestMyInventory')
@@ -5246,7 +5315,8 @@ RegisterNUICallback('getPlayerInventoryForUI', function(data, cb)
             success = false,
             error = "Inventory data not available, requesting from server",
             inventory = {},
-            equippedItems = {}
+            equippedItems = {},
+            playerInfo = playerInfo
         })
     end
 end)

@@ -2183,7 +2183,7 @@ Config.RobberHideouts = {
 Config.MedicalStores = Config.MedicalStores or {
     {
         id = "medical_store_central_ls",
-        location = vector4(307.62, -595.31, 43.29, 70.0),
+        location = vector4(299.18, -584.89, 43.26, 71.0),
         model = "s_m_m_doctor_01",
         name = "Medical Store",
         blipName = "Central LS Medical Store",
@@ -2194,7 +2194,7 @@ Config.MedicalStores = Config.MedicalStores or {
     },
     {
         id = "medical_store_mount_zonah",
-        location = vector4(-450.98, -339.29, 34.5, 84.0),
+        location = vector4(-440.66, -324.58, 34.91, 111.0),
         model = "s_m_m_doctor_01",
         name = "Medical Store",
         blipName = "Mount Zonah Medical Store",
@@ -2205,7 +2205,7 @@ Config.MedicalStores = Config.MedicalStores or {
     },
     {
         id = "medical_store_sandy",
-        location = vector4(1836.56, 3678.34, 34.28, 212.0),
+        location = vector4(1839.39, 3672.06, 34.28, 208.0),
         model = "s_m_m_doctor_01",
         name = "Medical Store",
         blipName = "Sandy Shores Medical Store",
@@ -2216,7 +2216,7 @@ Config.MedicalStores = Config.MedicalStores or {
     },
     {
         id = "medical_store_paleto",
-        location = vector4(-248.08, 6332.72, 32.43, 223.0),
+        location = vector4(-247.42, 6329.53, 32.43, 312.0),
         model = "s_m_m_doctor_01",
         name = "Medical Store",
         blipName = "Paleto Medical Store",
