@@ -1,0 +1,210 @@
+name: Bug Report
+description: Report a bug, broken feature, exploit, or gameplay issue in the Cops and Robbers FiveM gamemode.
+title: "[Bug]: "
+labels:
+  - bug
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug for **Cops and Robbers**.
+
+        Please provide as much detail as possible so the development team can reproduce, investigate, and fix the issue.
+
+  - type: textarea
+    id: bug-summary
+    attributes:
+      label: Bug Summary
+      description: Give a short summary of the bug.
+      placeholder: "Example: Robber characters can still access the PD menu after switching from a cop character."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How serious is this bug?
+      options:
+        - "Low"
+        - "Medium"
+        - "High"
+        - "Critical"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: bug-category
+    attributes:
+      label: Bug Category
+      description: What area of the gamemode does this bug affect?
+      options:
+        - "Police / PD System"
+        - "Robber / Criminal System"
+        - "Character System"
+        - "Clothing / Uniforms"
+        - "UI / Menus"
+        - "Vehicles"
+        - "Weapons"
+        - "Economy"
+        - "Jobs"
+        - "Stores / Shops"
+        - "Robberies"
+        - "Jail / Prison"
+        - "Map / World"
+        - "Admin / Staff Tools"
+        - "Permissions / Access Control"
+        - "Anti-Cheat / Exploit"
+        - "Server Performance"
+        - "Client Crash"
+        - "Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-role
+    attributes:
+      label: Affected Character Type
+      description: Which character type is affected?
+      options:
+        - "Cop"
+        - "Robber"
+        - "Both cop and robber"
+        - "Staff / Admin"
+        - "All players"
+        - "Unknown"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Explain what happened in detail.
+      placeholder: |
+        Example:
+        After dying as a cop and selecting a robber character, the player still has access to the PD menu and PD store.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: List the exact steps needed to reproduce the bug.
+      placeholder: |
+        Example:
+        1. Load into the server as a cop character.
+        2. Die while playing as the cop.
+        3. Select a robber character.
+        4. Try to open the PD menu.
+        5. Notice that the PD menu is still accessible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-result
+    attributes:
+      label: Expected Result
+      description: What should have happened instead?
+      placeholder: "Example: Robber characters should not have access to the PD menu or PD store."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-result
+    attributes:
+      label: Actual Result
+      description: What actually happened?
+      placeholder: "Example: The robber character still has access to cop-only menus and stores."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: Reproducibility
+      description: How often does this bug happen?
+      options:
+        - "Always"
+        - "Often"
+        - "Sometimes"
+        - "Rarely"
+        - "Unable to reproduce again"
+    validations:
+      required: true
+
+  - type: input
+    id: server-build
+    attributes:
+      label: Server Build / Version
+      description: If known, enter the server build, branch, commit, or test version.
+      placeholder: "Example: Development build, main branch, commit abc123"
+    validations:
+      required: false
+
+  - type: input
+    id: time-date
+    attributes:
+      label: Date and Time
+      description: When did the bug happen?
+      placeholder: "Example: 04/26/2026 around 8:30 PM EST"
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots-videos
+    attributes:
+      label: Screenshots / Videos
+      description: Attach screenshots, clips, or other proof of the issue.
+      placeholder: "Drag and drop screenshots or videos here."
+    validations:
+      required: false
+
+  - type: textarea
+    id: error-messages
+    attributes:
+      label: Error Messages / Console Logs
+      description: Paste any client console, F8, txAdmin, or server console errors here.
+      placeholder: |
+        Paste logs here if available.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: possible-cause
+    attributes:
+      label: Possible Cause
+      description: If you have an idea what may be causing the issue, explain it here.
+      placeholder: |
+        Example:
+        This may be caused by old job permissions not being cleared when switching characters.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other useful information.
+      placeholder: "Example: This only happened after dying, not when switching characters normally."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Submission Checklist
+      description: Please confirm the following before submitting.
+      options:
+        - label: I searched existing issues to make sure this bug has not already been reported.
+          required: true
+        - label: I provided clear steps to reproduce the bug.
+          required: true
+        - label: I explained the expected result and actual result.
+          required: true
+        - label: I included screenshots, videos, or logs if available.
+          required: false
