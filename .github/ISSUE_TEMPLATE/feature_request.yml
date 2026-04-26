@@ -1,0 +1,207 @@
+name: Feature Request
+description: Suggest a new feature, improvement, or gameplay addition for the Cops and Robbers FiveM gamemode.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - feature request
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature for **Cops and Robbers**.
+
+        Please provide as much detail as possible so the development team can understand the idea, why it matters, and how it should work in-game.
+
+  - type: textarea
+    id: feature-summary
+    attributes:
+      label: Feature Summary
+      description: Give a short summary of the feature or improvement.
+      placeholder: Example: Add a bank robbery cooldown system with police alerts.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this feature solve?
+      description: Explain the issue, missing gameplay mechanic, or frustration this feature would improve.
+      placeholder: Example: Robberies can currently be spammed back-to-back, which makes gameplay unbalanced for cops and robbers.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you think the feature should work.
+      placeholder: |
+        Example:
+        - Add a 30-minute cooldown after a successful bank robbery.
+        - Notify online cops when a robbery starts.
+        - Require at least 3 cops online before the robbery can begin.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature-category
+    attributes:
+      label: Feature Category
+      description: What area of the gamemode does this feature affect?
+      options:
+        - Police / PD System
+        - Robber / Criminal System
+        - Economy
+        - Jobs
+        - Vehicles
+        - Weapons
+        - Stores / Shops
+        - Robberies
+        - Jail / Prison
+        - Character System
+        - Clothing / Uniforms
+        - UI / Menus
+        - Map / World
+        - Admin / Staff Tools
+        - Anti-Cheat / Exploit Prevention
+        - Quality of Life
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Requested Priority
+      description: How important do you think this feature is?
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+
+  - type: dropdown
+    id: player-type
+    attributes:
+      label: Who would this feature affect?
+      description: Select the main group affected by this feature.
+      options:
+        - Cops
+        - Robbers
+        - Both cops and robbers
+        - Staff / Admins
+        - New players
+        - All players
+    validations:
+      required: true
+
+  - type: textarea
+    id: gameplay-details
+    attributes:
+      label: Gameplay Details
+      description: Explain the feature in more detail. Include rules, restrictions, rewards, cooldowns, permissions, or balancing ideas.
+      placeholder: |
+        Example:
+        - Robbery starts when a player uses an interaction point.
+        - Cops receive a dispatch alert.
+        - Robbers must stay inside the robbery zone.
+        - If robbers escape, they receive dirty money.
+        - If cops stop them, robbers are arrested.
+    validations:
+      required: false
+
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Permissions / Access
+      description: Should this feature be limited to certain roles, jobs, ranks, or character types?
+      placeholder: |
+        Example:
+        - Only cop characters can access this menu.
+        - Only PD Sergeant+ can use this command.
+        - Robbers must be level 5+ to start this activity.
+    validations:
+      required: false
+
+  - type: textarea
+    id: ui-menu
+    attributes:
+      label: UI / Menu Behavior
+      description: If this feature needs a menu, button, notification, or prompt, describe what it should look like or say.
+      placeholder: |
+        Example:
+        A confirmation menu should appear before starting the robbery:
+        "Start Bank Robbery?"
+        Buttons: Confirm / Cancel
+    validations:
+      required: false
+
+  - type: textarea
+    id: balance
+    attributes:
+      label: Balance Considerations
+      description: Explain anything that could make this feature overpowered, unfair, or abusable.
+      placeholder: |
+        Example:
+        This should require a minimum number of cops online so robberies do not happen when no police are available.
+    validations:
+      required: false
+
+  - type: textarea
+    id: abuse-prevention
+    attributes:
+      label: Abuse / Exploit Prevention
+      description: List any ways players might abuse this feature and how it could be prevented.
+      placeholder: |
+        Example:
+        - Add cooldowns to prevent spam.
+        - Validate rewards server-side.
+        - Remove access when switching from cop to robber.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Are there other ways this feature could be handled?
+      placeholder: Example: Instead of a cooldown, the system could require special items to start robberies.
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples / References
+      description: Add screenshots, videos, links, or examples from other servers/games if helpful.
+      placeholder: Paste links, images, or examples here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add anything else the development team should know.
+      placeholder: Any extra details, notes, or related issues.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Submission Checklist
+      description: Please confirm the following before submitting.
+      options:
+        - label: I searched existing issues to make sure this feature has not already been requested.
+          required: true
+        - label: I provided a clear description of the feature.
+          required: true
+        - label: I explained why this feature would improve the Cops and Robbers gamemode.
+          required: true
+        - label: I included screenshots, examples, or references if available.
+          required: false
