@@ -19,7 +19,7 @@ body:
     attributes:
       label: Feature Summary
       description: Give a short summary of the feature or improvement.
-      placeholder: Example: Add a bank robbery cooldown system with police alerts.
+      placeholder: "Example: Add a bank robbery cooldown system with police alerts."
     validations:
       required: true
 
@@ -28,7 +28,7 @@ body:
     attributes:
       label: What problem does this feature solve?
       description: Explain the issue, missing gameplay mechanic, or frustration this feature would improve.
-      placeholder: Example: Robberies can currently be spammed back-to-back, which makes gameplay unbalanced for cops and robbers.
+      placeholder: "Example: Robberies can currently be spammed back-to-back, which makes gameplay unbalanced for cops and robbers."
     validations:
       required: true
 
@@ -169,7 +169,7 @@ body:
     attributes:
       label: Alternatives Considered
       description: Are there other ways this feature could be handled?
-      placeholder: Example: Instead of a cooldown, the system could require special items to start robberies.
+      placeholder: "Example: Instead of a cooldown, the system could require special items to start robberies."
     validations:
       required: false
 
