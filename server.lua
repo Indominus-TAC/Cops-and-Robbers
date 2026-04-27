@@ -925,6 +925,7 @@ SetPlayerRole = function(playerId, role, skipNotify)
         return
     end
 
+    local previousRole = pData.role
     pData.role = role
     if role == "cop" or role == "robber" then
         EnsureRoleStarterState(pIdNum, role)
@@ -982,6 +983,10 @@ SetPlayerRole = function(playerId, role, skipNotify)
     end
     
     SafeTriggerClientEvent('cnr:syncInventory', pIdNum, MinimizeInventoryForSync(playersData[pIdNum].inventory))
+
+    if previousRole ~= role and SavePlayerDataImmediate then
+        SavePlayerDataImmediate(pIdNum, "role_change")
+    end
 end
 
 IsPlayerCop = function(playerId) return GetPlayerRole(playerId) == "cop" end
@@ -2770,7 +2775,12 @@ AddEventHandler('cnr:playerSpawned', function()
     local src = source
     Log(string.format("Player %s spawned, initializing legacy runtime data", src), "info", "CNR_SERVER")
 
-    LoadPlayerData(src)
+    local existingData = GetCnrPlayerData(src)
+    if existingData and existingData.isDataLoaded then
+        SetPlayerRole(src, existingData.role or "citizen", true)
+    else
+        LoadPlayerData(src)
+    end
 
     local playerLicense = GetPlayerLicense(src)
     if playerLicense then

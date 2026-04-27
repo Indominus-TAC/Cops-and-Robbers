@@ -2990,6 +2990,12 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
         playerData.role = role
     end
 
+    activeRoleActionMenu = nil
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
+    SetNuiFocus(false, false)
+
     if role ~= "cop" then
         SyncPoliceDispatchBlips({})
     end
@@ -3277,6 +3283,10 @@ end)
 -- Event handler for showing role selection UI
 RegisterNetEvent('cnr:showRoleSelection')
 AddEventHandler('cnr:showRoleSelection', function()
+    activeRoleActionMenu = nil
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
     SendNUIMessage({ 
         action = 'showRoleSelection', 
         resourceName = GetCurrentResourceName() 
