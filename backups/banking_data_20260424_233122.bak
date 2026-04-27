@@ -1,0 +1,205 @@
+{
+    "loans": {
+        "license:a423132e944ec34bdb1bfd1c545ed18b10e975c1": {
+            "startDate": 1777080419,
+            "dailyInterest": 0.005,
+            "collateral": 5000,
+            "duration": 2592000,
+            "totalOwed": 10100,
+            "principal": 10000
+        }
+    },
+    "investments": {
+        "license:a423132e944ec34bdb1bfd1c545ed18b10e975c1": [
+            {
+                "type": "property_development",
+                "duration": 259200,
+                "expectedReturn": 0.08,
+                "startTime": 1777080348,
+                "riskLevel": "medium",
+                "amount": 500000
+            },
+            {
+                "type": "property_development",
+                "duration": 259200,
+                "startTime": 1777084938,
+                "riskLevel": "medium",
+                "amount": 25000,
+                "expectedReturn": 0.08
+            },
+            {
+                "type": "property_development",
+                "duration": 259200,
+                "startTime": 1777084946,
+                "riskLevel": "medium",
+                "amount": 150000,
+                "expectedReturn": 0.08
+            }
+        ]
+    },
+    "accounts": {
+        "license:a423132e944ec34bdb1bfd1c545ed18b10e975c1": {
+            "dailyWithdrawal": 1700,
+            "lastWithdrawalReset": "2026-04-24",
+            "accountNumber": 943612670,
+            "balance": 7824086.0,
+            "openDate": 1751506034,
+            "transactionHistory": [
+                {
+                    "type": "withdrawal",
+                    "balance": 3500,
+                    "description": "ATM withdrawal",
+                    "amount": 1500,
+                    "timestamp": 1777062848
+                },
+                {
+                    "type": "withdrawal",
+                    "balance": 3400,
+                    "description": "ATM withdrawal",
+                    "amount": 100,
+                    "timestamp": 1777071920
+                },
+                {
+                    "type": "withdrawal",
+                    "balance": 3300,
+                    "description": "ATM withdrawal",
+                    "amount": 100,
+                    "timestamp": 1777071934
+                },
+                {
+                    "type": "deposit",
+                    "balance": 153300.0,
+                    "description": "Cash deposit",
+                    "amount": 150000.0,
+                    "timestamp": 1777080261
+                },
+                {
+                    "type": "deposit",
+                    "balance": 303300.0,
+                    "description": "Cash deposit",
+                    "amount": 150000.0,
+                    "timestamp": 1777080275
+                },
+                {
+                    "type": "deposit",
+                    "balance": 318300.0,
+                    "description": "Cash deposit",
+                    "amount": 15000.0,
+                    "timestamp": 1777080283
+                },
+                {
+                    "type": "deposit",
+                    "balance": 468300.0,
+                    "description": "Cash deposit",
+                    "amount": 150000.0,
+                    "timestamp": 1777080286
+                },
+                {
+                    "type": "deposit",
+                    "balance": 1468299.0,
+                    "description": "Cash deposit",
+                    "amount": 999999.0,
+                    "timestamp": 1777080292
+                },
+                {
+                    "type": "deposit",
+                    "balance": 2468298.0,
+                    "description": "Cash deposit",
+                    "amount": 999999.0,
+                    "timestamp": 1777080295
+                },
+                {
+                    "type": "deposit",
+                    "balance": 3468297.0,
+                    "description": "Cash deposit",
+                    "amount": 999999.0,
+                    "timestamp": 1777080298
+                },
+                {
+                    "type": "deposit",
+                    "balance": 4468297.0,
+                    "description": "Cash deposit",
+                    "amount": 1000000.0,
+                    "timestamp": 1777080302
+                },
+                {
+                    "type": "deposit",
+                    "balance": 5468297.0,
+                    "description": "Cash deposit",
+                    "amount": 1000000.0,
+                    "timestamp": 1777080305
+                },
+                {
+                    "type": "deposit",
+                    "balance": 6468297.0,
+                    "description": "Cash deposit",
+                    "amount": 1000000.0,
+                    "timestamp": 1777080309
+                },
+                {
+                    "type": "deposit",
+                    "balance": 7468297.0,
+                    "description": "Cash deposit",
+                    "amount": 1000000.0,
+                    "timestamp": 1777080312
+                },
+                {
+                    "type": "deposit",
+                    "balance": 8468297.0,
+                    "description": "Cash deposit",
+                    "amount": 1000000.0,
+                    "timestamp": 1777080314
+                },
+                {
+                    "type": "investment",
+                    "balance": 7968297.0,
+                    "description": "Investment: Property Development Fund",
+                    "amount": 500000,
+                    "timestamp": 1777080348
+                },
+                {
+                    "type": "loan",
+                    "balance": 7973297.0,
+                    "description": "Loan approved (Collateral: $5000)",
+                    "amount": 10000,
+                    "timestamp": 1777080419
+                },
+                {
+                    "type": "interest",
+                    "balance": 7981270.0,
+                    "description": "Daily interest earned",
+                    "amount": 7973,
+                    "timestamp": 1777082767
+                },
+                {
+                    "type": "deposit",
+                    "balance": 7991270.0,
+                    "description": "Cash deposit",
+                    "amount": 10000.0,
+                    "timestamp": 1777084915
+                },
+                {
+                    "type": "investment",
+                    "balance": 7966270.0,
+                    "description": "Investment: Property Development Fund",
+                    "amount": 25000,
+                    "timestamp": 1777084938
+                },
+                {
+                    "type": "investment",
+                    "balance": 7816270.0,
+                    "description": "Investment: Property Development Fund",
+                    "amount": 150000,
+                    "timestamp": 1777084946
+                },
+                {
+                    "type": "interest",
+                    "balance": 7824086.0,
+                    "description": "Daily interest earned",
+                    "amount": 7816,
+                    "timestamp": 1777086763
+                }
+            ]
+        }
+    }
+}

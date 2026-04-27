@@ -1,0 +1,14 @@
+{
+    "accounts": {
+        "license:a423132e944ec34bdb1bfd1c545ed18b10e975c1": {
+            "balance": 5000,
+            "lastWithdrawalReset": "2026-04-24",
+            "openDate": 1751506034,
+            "transactionHistory": [],
+            "dailyWithdrawal": 0,
+            "accountNumber": 943612670
+        }
+    },
+    "investments": [],
+    "loans": []
+}
