@@ -458,7 +458,7 @@ Config.DefaultWeaponAmmo = {
 -- Cop Feature Settings
 -- =========================
 Config.SpikeStripDuration     = 120000  -- milliseconds (120 seconds) until a spike strip automatically despawns.
-Config.MaxDeployedSpikeStrips = 3      -- Max spike strips a cop can have deployed simultaneously (server-side check).
+Config.MaxDeployedSpikeStrips = 4      -- Max spike strips a cop can have deployed simultaneously (server-side check).
 
 Config.SpeedLimitMph          = 50.0   -- mph for speed radar. Client uses this for display, server for fine logic. (Changed from KmH to MPH)
 Config.SpeedingFine           = 250    -- Amount of fine for speeding.

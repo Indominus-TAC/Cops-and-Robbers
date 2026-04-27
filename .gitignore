@@ -17,4 +17,5 @@ inventory_server.lua.backup
 .DS_Store
 Thumbs.db
 /player_data
+/backups/*.bak
 
