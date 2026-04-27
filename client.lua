@@ -5028,30 +5028,82 @@ RegisterNUICallback('characterEditor_switchGender', function(data, cb)
     currentCharacterData.model = modelName
     ApplyCharacterData(currentCharacterData, PlayerPedId())
     UpdateCharacterEditorCamera()
-    cb({ success = true })
+    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
 end)
 
 RegisterNUICallback('characterEditor_previewUniform', function(data, cb)
     local presetIndex = tonumber(data and data.presetIndex)
-    cb({ success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false })
+    local success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false
+    cb({
+        success = success,
+        characterData = success and DeepCopyCharacterData(currentCharacterData) or nil
+    })
 end)
 
 RegisterNUICallback('characterEditor_applyUniform', function(data, cb)
     local presetIndex = tonumber(data and data.presetIndex)
-    cb({ success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false })
+    local success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false
+    cb({
+        success = success,
+        characterData = success and DeepCopyCharacterData(currentCharacterData) or nil
+    })
 end)
 
 RegisterNUICallback('characterEditor_cancelUniformPreview', function(data, cb)
     ApplyCharacterData(currentCharacterData, PlayerPedId())
-    cb({ success = true })
+    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
+end)
+
+RegisterNUICallback('characterEditor_reset', function(data, cb)
+    local defaultCharacter = GetDefaultCharacterData()
+    defaultCharacter.model = currentCharacterData and currentCharacterData.model or defaultCharacter.model
+
+    currentCharacterData = DeepCopyCharacterData(defaultCharacter)
+
+    local desiredModel = currentCharacterData.model or "mp_m_freemode_01"
+    local modelHash = GetHashKey(desiredModel)
+    RequestModel(modelHash)
+
+    local attempts = 0
+    while not HasModelLoaded(modelHash) and attempts < 100 do
+        Citizen.Wait(50)
+        attempts = attempts + 1
+    end
+
+    if HasModelLoaded(modelHash) and GetEntityModel(PlayerPedId()) ~= modelHash then
+        SetPlayerModel(PlayerId(), modelHash)
+        Citizen.Wait(100)
+    end
+
+    ApplyCharacterData(currentCharacterData, PlayerPedId())
+    UpdateCharacterEditorCamera()
+
+    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
 end)
 
 RegisterNUICallback('characterEditor_loadCharacter', function(data, cb)
     local characterKey = data and data.characterKey
     if characterKey and playerCharacters[characterKey] then
         currentCharacterData = DeepCopyCharacterData(playerCharacters[characterKey])
+
+        local desiredModel = currentCharacterData.model or "mp_m_freemode_01"
+        local modelHash = GetHashKey(desiredModel)
+        RequestModel(modelHash)
+
+        local attempts = 0
+        while not HasModelLoaded(modelHash) and attempts < 100 do
+            Citizen.Wait(50)
+            attempts = attempts + 1
+        end
+
+        if HasModelLoaded(modelHash) and GetEntityModel(PlayerPedId()) ~= modelHash then
+            SetPlayerModel(PlayerId(), modelHash)
+            Citizen.Wait(100)
+        end
+
         ApplyCharacterData(currentCharacterData, PlayerPedId())
-        cb({ success = true })
+        UpdateCharacterEditorCamera()
+        cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
         return
     end
 

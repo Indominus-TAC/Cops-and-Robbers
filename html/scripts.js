@@ -323,7 +323,7 @@ window.addEventListener('message', function(event) {
             updateCharacterSlot(data.characterKey, data.characterData);
             break;
         case 'testCharacterEditor':
-            const testEditor = document.getElementById('character-editor');
+            const testEditor = document.getElementById('character-editor-container');
             if (testEditor) {
                 console.log('[CNR_CHARACTER_EDITOR] Character editor element found');
                 fetch(`https://${CNRConfig.getResourceName()}/characterEditor_test_result`, {
@@ -3882,237 +3882,6 @@ document.addEventListener('DOMContentLoaded', function() {
 // Character editor data is already declared at the top of the file
 
 function initializeCharacterEditor() {
-    if (window.characterEditorLegacyUiInitialized) {
-        return;
-    }
-
-    // Camera controls
-    document.querySelectorAll('.camera-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.camera-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            
-            const mode = this.getAttribute('data-mode');
-            fetchSetNuiFocus(true, true);
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_changeCamera`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: mode })
-            });
-        });
-    });
-
-    // Character rotation
-    document.querySelectorAll('.rotate-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const direction = this.getAttribute('data-direction');
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_rotateCharacter`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ direction: direction })
-            });
-        });
-    });
-
-    // Gender selection
-    document.querySelectorAll('.gender-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            
-            const gender = this.getAttribute('data-gender');
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_switchGender`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ gender: gender })
-            });
-        });
-    });
-
-    // Customization tabs
-    document.querySelectorAll('.customization-tabs .tab-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const category = this.getAttribute('data-category');
-            switchCustomizationTab(category);
-        });
-    });
-
-    // Customization sliders
-    document.querySelectorAll('.customization-slider').forEach(slider => {
-        slider.addEventListener('input', function() {
-            const feature = this.getAttribute('data-feature');
-            const category = this.getAttribute('data-category') || 'basic';
-            const value = parseFloat(this.value);
-            
-            // Update slider value display
-            const valueDisplay = this.parentElement.querySelector('.slider-value');
-            if (valueDisplay) {
-                valueDisplay.textContent = this.step && this.step.includes('.') ? value.toFixed(1) : value.toString();
-            }
-            
-            // Send update to client
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_updateFeature`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category: category, feature: feature, value: value })
-            });
-        });
-    });
-
-    document.querySelectorAll('.clothing-slider').forEach(slider => {
-        slider.addEventListener('input', function() {
-            const entryType = this.getAttribute('data-entry-type') || 'component';
-            const targetId = parseInt(this.getAttribute('data-target-id'), 10);
-            const valueType = this.getAttribute('data-value-type');
-            const value = parseInt(this.value, 10);
-
-            const valueDisplay = this.parentElement.querySelector('.slider-value');
-            if (valueDisplay) {
-                valueDisplay.textContent = value.toString();
-            }
-
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_updateComponent`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    entryType: entryType,
-                    targetId: targetId,
-                    valueType: valueType,
-                    value: value
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (!result || !result.success) {
-                    return;
-                }
-
-                syncClothingControl(result.entryType, result.targetId, 'drawable', result.drawable);
-                syncClothingControl(result.entryType, result.targetId, 'texture', result.texture);
-            })
-            .catch(error => {
-                console.error('[CNR_CHARACTER_EDITOR] Error updating clothing:', error);
-            });
-        });
-    });
-
-    // Uniform controls
-    const previewUniformBtn = document.getElementById('preview-uniform-btn');
-    const applyUniformBtn = document.getElementById('apply-uniform-btn');
-    const cancelUniformBtn = document.getElementById('cancel-uniform-btn');
-
-    if (previewUniformBtn) {
-        previewUniformBtn.addEventListener('click', function() {
-            if (characterEditorData.selectedUniformPreset !== null) {
-                fetch(`https://${CNRConfig.getResourceName()}/characterEditor_previewUniform`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ presetIndex: characterEditorData.selectedUniformPreset })
-                });
-                
-                applyUniformBtn.disabled = false;
-                cancelUniformBtn.disabled = false;
-            }
-        });
-    }
-
-    if (applyUniformBtn) {
-        applyUniformBtn.addEventListener('click', function() {
-            if (characterEditorData.selectedUniformPreset !== null) {
-                fetch(`https://${CNRConfig.getResourceName()}/characterEditor_applyUniform`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ presetIndex: characterEditorData.selectedUniformPreset })
-                });
-                
-                this.disabled = true;
-                cancelUniformBtn.disabled = true;
-            }
-        });
-    }
-
-    if (cancelUniformBtn) {
-        cancelUniformBtn.addEventListener('click', function() {
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_cancelUniformPreview`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-            
-            applyUniformBtn.disabled = true;
-            this.disabled = true;
-        });
-    }
-
-    // Character management controls
-    const loadCharacterBtn = document.getElementById('load-character-btn');
-    const deleteCharacterBtn = document.getElementById('delete-character-btn');
-
-    if (loadCharacterBtn) {
-        loadCharacterBtn.addEventListener('click', function() {
-            if (characterEditorData.selectedCharacterSlot) {
-                fetch(`https://${CNRConfig.getResourceName()}/characterEditor_loadCharacter`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ characterKey: characterEditorData.selectedCharacterSlot })
-                });
-            }
-        });
-    }
-
-    if (deleteCharacterBtn) {
-        deleteCharacterBtn.addEventListener('click', function() {
-            if (characterEditorData.selectedCharacterSlot && confirm('Are you sure you want to delete this character?')) {
-                fetch(`https://${CNRConfig.getResourceName()}/characterEditor_deleteCharacter`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ characterKey: characterEditorData.selectedCharacterSlot })
-                }).then(response => response.json()).then(result => {
-                    if (result && result.success && characterEditorData.playerCharacters) {
-                        delete characterEditorData.playerCharacters[characterEditorData.selectedCharacterSlot];
-                    }
-
-                    updateCharacterSlots();
-                });
-            }
-        });
-    }
-
-    // Main action buttons
-    const saveBtn = document.getElementById('character-editor-save-btn');
-    const cancelBtn = document.getElementById('character-editor-cancel-btn');
-    const closeBtn = document.getElementById('character-editor-close-btn');
-
-    if (saveBtn) {
-        saveBtn.addEventListener('click', function() {
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_save`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-        });
-    }
-
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', function() {
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_cancel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-        });
-    }
-
-    if (closeBtn) {
-        closeBtn.addEventListener('click', function() {
-            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_cancel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-        });
-    }
-
     window.characterEditorLegacyUiInitialized = true;
     window.characterEditorLegacyHandlersSetup = true;
 }
@@ -4152,107 +3921,17 @@ function syncClothingControl(entryType, targetId, valueType, value) {
 }
 
 function openCharacterEditor(data) {
-    console.log('[CNR_CHARACTER_EDITOR] Opening character editor with data:', data);
-    
-    // Check if character editor element exists
-    const characterEditor = document.getElementById('character-editor');
-    if (!characterEditor) {
-        console.error('[CNR_CHARACTER_EDITOR] Character editor element not found in DOM');
-        // Send error back to client
-        fetch(`https://${CNRConfig.getResourceName()}/characterEditor_error`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Character editor element not found' })
-        });
+    if (!window.enhancedCharacterEditor) {
+        console.error('[CNR_CHARACTER_EDITOR] Enhanced character editor is not initialized');
         return;
     }
-    
-    try {
-        characterEditorData.isOpen = true;
-        characterEditorData.currentRole = data.role;
-        characterEditorData.currentSlot = data.characterSlot;
-        characterEditorData.characterData = data.characterData;
-        characterEditorData.uniformPresets = data.uniformPresets;
-        characterEditorData.playerCharacters = data.playerCharacters || {};
-        characterEditorData.selectedUniformPreset = null;
-        characterEditorData.selectedCharacterSlot = null;
 
-        // Update UI elements
-        const roleElement = document.getElementById('character-editor-role');
-        const slotElement = document.getElementById('character-editor-slot');
-        
-        if (roleElement) roleElement.textContent = data.role.charAt(0).toUpperCase() + data.role.slice(1);
-        if (slotElement) slotElement.textContent = `Slot ${data.characterSlot}`;
-        switchCustomizationTab('appearance');
-        document.querySelectorAll('.camera-btn').forEach(button => {
-            button.classList.toggle('active', button.getAttribute('data-mode') === 'full');
-        });
-
-        // Populate uniform presets
-        updateUniformPresets();
-        
-        // Populate character slots
-        updateCharacterSlots();
-        
-        // Update sliders with current character data
-        updateSlidersFromCharacterData();
-
-        // Setup event handlers if not already done
-        setupCharacterEditorEventHandlers();
-
-        // Show the character editor
-        characterEditor.classList.remove('hidden');
-        
-        // Ensure the editor is visible
-        characterEditor.style.display = 'flex';
-        characterEditor.style.visibility = 'visible';
-        characterEditor.style.opacity = '1';
-
-        console.log('[CNR_CHARACTER_EDITOR] Successfully opened character editor for', data.role, 'slot', data.characterSlot);
-        
-        // Send success confirmation back to client
-        fetch(`https://${CNRConfig.getResourceName()}/characterEditor_opened`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ success: true })
-        });
-        
-    } catch (error) {
-        console.error('[CNR_CHARACTER_EDITOR] Error opening character editor:', error);
-        // Send error back to client
-        fetch(`https://${CNRConfig.getResourceName()}/characterEditor_error`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: error.message })
-        });
-    }
+    window.enhancedCharacterEditor.openEditor(data);
 }
 
 function closeCharacterEditor() {
-    console.log('[CNR_CHARACTER_EDITOR] Closing character editor');
-    
-    try {
-        characterEditorData.isOpen = false;
-        characterEditorData.selectedUniformPreset = null;
-        characterEditorData.selectedCharacterSlot = null;
-        
-        const characterEditor = document.getElementById('character-editor');
-        if (characterEditor) {
-            characterEditor.classList.add('hidden');
-            characterEditor.style.display = 'none';
-        }
-
-        // Send close confirmation to client
-        fetch(`https://${CNRConfig.getResourceName()}/characterEditor_closed`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ success: true })
-        });
-
-        console.log('[CNR_CHARACTER_EDITOR] Successfully closed character editor');
-        
-    } catch (error) {
-        console.error('[CNR_CHARACTER_EDITOR] Error closing character editor:', error);
+    if (window.enhancedCharacterEditor) {
+        window.enhancedCharacterEditor.closeEditor(false, false);
     }
 }
 
@@ -4275,6 +3954,10 @@ function updateCharacterSlot(characterKey, characterData) {
                     slotText.textContent = 'Character Created';
                 }
             });
+        }
+
+        if (window.enhancedCharacterEditor) {
+            window.enhancedCharacterEditor.updateCharacterSlot(characterKey, characterData);
         }
         
         console.log('[CNR_CHARACTER_EDITOR] Successfully updated character slot UI');
@@ -4776,17 +4459,42 @@ class EnhancedCharacterEditor {
         this.selectedUniformPreset = null;
         this.selectedCharacterSlot = null;
         this.resourceName = CNRConfig.getResourceName();
+        this.editorElement = document.getElementById('character-editor-container');
+        this.clothingComponentDefinitions = [
+            { id: 1, label: 'Mask', min: 0 },
+            { id: 3, label: 'Arms', min: 0 },
+            { id: 4, label: 'Pants', min: 0 },
+            { id: 5, label: 'Bag', min: 0 },
+            { id: 6, label: 'Shoes', min: 0 },
+            { id: 7, label: 'Accessories', min: 0 },
+            { id: 8, label: 'Undershirt', min: 0 },
+            { id: 9, label: 'Armor', min: 0 },
+            { id: 10, label: 'Decals', min: 0 },
+            { id: 11, label: 'Top', min: 0 }
+        ];
+        this.clothingPropDefinitions = [
+            { id: 0, label: 'Hat', min: -1 },
+            { id: 1, label: 'Glasses', min: -1 },
+            { id: 2, label: 'Ear Accessory', min: -1 },
+            { id: 6, label: 'Watch', min: -1 },
+            { id: 7, label: 'Bracelet', min: -1 }
+        ];
         
         this.init();
     }
 
     init() {
+        this.populateClothingControls();
         this.setupEventListeners();
         this.setupSliderHandlers();
         console.log('[CNR_CHARACTER_EDITOR] Enhanced Character Editor initialized');
     }
 
     setupEventListeners() {
+        if (!this.editorElement) {
+            return;
+        }
+
         // Close button
         const closeBtn = document.getElementById('close-editor-btn');
         if (closeBtn) {
@@ -4901,78 +4609,95 @@ class EnhancedCharacterEditor {
     }
 
     setupSliderHandlers() {
-        // Handle all sliders in the enhanced character editor
-        document.querySelectorAll('#character-editor-container .slider').forEach(slider => {
-            slider.addEventListener('input', (e) => {
-                this.handleSliderChange(e.target);
-            });
+        if (!this.editorElement || this.sliderHandlerAttached) {
+            return;
+        }
+
+        this.editorElement.addEventListener('input', (e) => {
+            const slider = e.target.closest('.slider');
+            if (!slider || !this.editorElement.contains(slider)) {
+                return;
+            }
+
+            this.handleSliderChange(slider);
         });
+
+        this.sliderHandlerAttached = true;
     }
 
     handleSliderChange(slider) {
         const feature = slider.dataset.feature;
         const category = slider.dataset.category || 'basic';
-        const component = slider.dataset.component;
-        const type = slider.dataset.type;
-        const parent = slider.dataset.parent;
-        
-        let value = parseFloat(slider.value);
-        
-        // Update value display
-        const valueDisplay = slider.parentElement.querySelector('.value-display');
-        if (valueDisplay) {
-            if (slider.min === '-1' && value === -1) {
-                valueDisplay.textContent = 'None';
-            } else if (slider.max === '100' && (feature && (feature.includes('Opacity') || feature.includes('opacity')))) {
-                valueDisplay.textContent = value + '%';
-            } else if (slider.step && slider.step.includes('.')) {
-                valueDisplay.textContent = value.toFixed(1);
-            } else {
-                valueDisplay.textContent = value.toString();
-            }
-        }
+        const entryType = slider.dataset.entryType;
+        const targetId = slider.dataset.targetId;
+        const valueType = slider.dataset.valueType;
 
-        // Convert percentage values for face features
-        if (category === 'faceFeatures') {
-            value = value / 100; // Convert to -1.0 to 1.0 range
-        }
+        let rawValue = parseFloat(slider.value);
+        this.updateSliderDisplay(slider, rawValue);
 
-        // Convert percentage values for opacity
-        if (feature && feature.toLowerCase().includes('opacity')) {
-            value = value / 100; // Convert to 0.0 to 1.0 range
-        }
-
-        // Send update to client
-        if (component && type) {
-            // Clothing component
+        if (entryType && targetId && valueType) {
             this.sendNUIMessage('characterEditor_updateComponent', {
-                component: parseInt(component),
-                type: type,
-                value: parseInt(value)
+                entryType: entryType,
+                targetId: parseInt(targetId, 10),
+                valueType: valueType,
+                value: parseInt(rawValue, 10)
+            }).then((result) => {
+                if (!result || !result.success) {
+                    return;
+                }
+
+                const tableName = result.entryType === 'prop' ? 'props' : 'components';
+                if (!this.characterData[tableName]) {
+                    this.characterData[tableName] = {};
+                }
+
+                this.characterData[tableName][result.targetId] = {
+                    drawable: result.drawable,
+                    texture: result.texture
+                };
+
+                this.syncClothingControl(result.entryType, result.targetId, 'drawable', result.drawable);
+                this.syncClothingControl(result.entryType, result.targetId, 'texture', result.texture);
             });
-        } else {
-            // Character feature
-            this.sendNUIMessage('characterEditor_updateFeature', {
-                category: category,
-                feature: feature,
-                value: value,
-                parent: parent
-            });
+            return;
         }
+
+        let value = rawValue;
+        if (category === 'faceFeatures') {
+            value = rawValue / 100;
+            this.characterData.faceFeatures = this.characterData.faceFeatures || {};
+            this.characterData.faceFeatures[feature] = value;
+        } else {
+            if (feature && feature.toLowerCase().includes('opacity')) {
+                value = rawValue / 100;
+            } else if (!slider.step || !slider.step.includes('.')) {
+                value = parseInt(rawValue, 10);
+            }
+
+            this.characterData[feature] = value;
+        }
+
+        this.sendNUIMessage('characterEditor_updateFeature', {
+            category: category,
+            feature: feature,
+            value: value
+        });
     }
 
-    switchCamera(mode) {
+    switchCamera(mode, notifyClient = true) {
         // Update active button
-        document.querySelectorAll('.camera-btn').forEach(btn => {
+        this.editorElement?.querySelectorAll('.camera-btn').forEach(btn => {
             btn.classList.remove('active');
         });
-        const activeBtn = document.querySelector(`[data-camera="${mode}"]`);
+        const activeBtn = this.editorElement?.querySelector(`[data-camera="${mode}"]`);
         if (activeBtn) {
             activeBtn.classList.add('active');
         }
 
         // Send to client
-        this.sendNUIMessage('characterEditor_changeCamera', { mode: mode });
+        if (notifyClient) {
+            this.sendNUIMessage('characterEditor_changeCamera', { mode: mode });
+        }
     }
 
     rotateCharacter(direction) {
@@ -4981,36 +4706,140 @@ class EnhancedCharacterEditor {
 
     switchGender(gender) {
         // Update active button
-        document.querySelectorAll('.gender-btn').forEach(btn => {
+        this.editorElement?.querySelectorAll('.gender-btn').forEach(btn => {
             btn.classList.remove('active');
         });
-        const activeBtn = document.querySelector(`[data-gender="${gender}"]`);
+        const activeBtn = this.editorElement?.querySelector(`[data-gender="${gender}"]`);
         if (activeBtn) {
             activeBtn.classList.add('active');
         }
 
         // Send to client
-        this.sendNUIMessage('characterEditor_switchGender', { gender: gender });
+        this.sendNUIMessage('characterEditor_switchGender', { gender: gender }).then((result) => {
+            if (result && result.success && result.characterData) {
+                this.characterData = result.characterData;
+                this.updateSlidersFromCharacterData();
+            }
+        });
     }
 
     switchTab(tabName) {
         // Update active tab button
-        document.querySelectorAll('.tab-button').forEach(btn => {
+        this.editorElement?.querySelectorAll('.tab-button').forEach(btn => {
             btn.classList.remove('active');
         });
-        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+        const activeBtn = this.editorElement?.querySelector(`[data-tab="${tabName}"]`);
         if (activeBtn) {
             activeBtn.classList.add('active');
         }
 
         // Update active tab panel
-        document.querySelectorAll('.tab-panel').forEach(panel => {
+        this.editorElement?.querySelectorAll('.tab-panel').forEach(panel => {
             panel.classList.remove('active');
         });
-        const targetTab = document.getElementById(`${tabName}-tab`);
+        const targetTab = this.editorElement?.querySelector(`#${tabName}-tab`);
         if (targetTab) {
             targetTab.classList.add('active');
         }
+    }
+
+    populateClothingControls() {
+        const componentContainer = document.getElementById('clothing-component-groups');
+        const propContainer = document.getElementById('clothing-prop-groups');
+
+        if (componentContainer) {
+            componentContainer.innerHTML = this.clothingComponentDefinitions.map((definition) =>
+                this.renderClothingControlGroup('component', definition)
+            ).join('');
+        }
+
+        if (propContainer) {
+            propContainer.innerHTML = this.clothingPropDefinitions.map((definition) =>
+                this.renderClothingControlGroup('prop', definition)
+            ).join('');
+        }
+    }
+
+    renderClothingControlGroup(entryType, definition) {
+        const textureMin = 0;
+        const drawableMin = definition.min;
+
+        return `
+            <div class="component-group">
+                <h4>${definition.label}</h4>
+                <div class="control-row">
+                    <div class="control-group">
+                        <label>Style</label>
+                        <input
+                            type="range"
+                            class="slider"
+                            min="${drawableMin}"
+                            max="255"
+                            value="${drawableMin}"
+                            data-entry-type="${entryType}"
+                            data-target-id="${definition.id}"
+                            data-value-type="drawable"
+                        >
+                        <span class="value-display">${drawableMin === -1 ? 'None' : drawableMin}</span>
+                    </div>
+                    <div class="control-group">
+                        <label>Texture</label>
+                        <input
+                            type="range"
+                            class="slider"
+                            min="${textureMin}"
+                            max="63"
+                            value="0"
+                            data-entry-type="${entryType}"
+                            data-target-id="${definition.id}"
+                            data-value-type="texture"
+                        >
+                        <span class="value-display">0</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    updateSliderDisplay(slider, rawValue) {
+        const valueDisplay = slider.parentElement?.querySelector('.value-display');
+        if (!valueDisplay) {
+            return;
+        }
+
+        if (slider.min === '-1' && Number(rawValue) === -1) {
+            valueDisplay.textContent = 'None';
+            return;
+        }
+
+        if (slider.dataset.category === 'faceFeatures') {
+            valueDisplay.textContent = Math.round(rawValue).toString();
+            return;
+        }
+
+        if (slider.dataset.feature && slider.dataset.feature.toLowerCase().includes('opacity')) {
+            valueDisplay.textContent = `${Math.round(rawValue)}%`;
+            return;
+        }
+
+        if (slider.step && slider.step.includes('.')) {
+            valueDisplay.textContent = Number(rawValue).toFixed(1);
+            return;
+        }
+
+        valueDisplay.textContent = rawValue.toString();
+    }
+
+    syncClothingControl(entryType, targetId, valueType, value) {
+        const slider = this.editorElement?.querySelector(
+            `[data-entry-type="${entryType}"][data-target-id="${targetId}"][data-value-type="${valueType}"]`
+        );
+        if (!slider) {
+            return;
+        }
+
+        slider.value = value;
+        this.updateSliderDisplay(slider, value);
     }
 
     populateUniformPresets() {
@@ -5042,12 +4871,12 @@ class EnhancedCharacterEditor {
 
     selectUniformPreset(index) {
         // Remove previous selection
-        document.querySelectorAll('.uniform-preset').forEach(preset => {
+        this.editorElement?.querySelectorAll('.uniform-preset').forEach(preset => {
             preset.classList.remove('selected');
         });
 
         // Select new preset
-        const presets = document.querySelectorAll('.uniform-preset');
+        const presets = this.editorElement?.querySelectorAll('.uniform-preset') || [];
         if (presets[index]) {
             presets[index].classList.add('selected');
         }
@@ -5066,6 +4895,11 @@ class EnhancedCharacterEditor {
         console.log('[CNR_CHARACTER_EDITOR] Previewing uniform at JS index:', this.selectedUniformPreset);
         this.sendNUIMessage('characterEditor_previewUniform', {
             presetIndex: this.selectedUniformPreset
+        }).then((result) => {
+            if (result && result.success && result.characterData) {
+                this.characterData = result.characterData;
+                this.updateSlidersFromCharacterData();
+            }
         });
 
         // Enable apply and cancel buttons
@@ -5080,6 +4914,11 @@ class EnhancedCharacterEditor {
 
         this.sendNUIMessage('characterEditor_applyUniform', {
             presetIndex: this.selectedUniformPreset
+        }).then((result) => {
+            if (result && result.success && result.characterData) {
+                this.characterData = result.characterData;
+                this.updateSlidersFromCharacterData();
+            }
         });
 
         // Disable buttons
@@ -5090,7 +4929,12 @@ class EnhancedCharacterEditor {
     }
 
     cancelUniformPreview() {
-        this.sendNUIMessage('characterEditor_cancelUniformPreview', {});
+        this.sendNUIMessage('characterEditor_cancelUniformPreview', {}).then((result) => {
+            if (result && result.success && result.characterData) {
+                this.characterData = result.characterData;
+                this.updateSlidersFromCharacterData();
+            }
+        });
 
         // Disable buttons
         const applyBtn = document.getElementById('apply-uniform-btn');
@@ -5104,6 +4948,12 @@ class EnhancedCharacterEditor {
         if (!container) return;
         
         container.innerHTML = '';
+        this.selectedCharacterSlot = null;
+
+        const loadBtn = document.getElementById('load-character-btn');
+        const deleteBtn = document.getElementById('delete-character-btn');
+        if (loadBtn) loadBtn.disabled = true;
+        if (deleteBtn) deleteBtn.disabled = true;
 
         // Create slots for current role (1 main + 1 alternate)
         for (let i = 1; i <= 2; i++) {
@@ -5130,7 +4980,7 @@ class EnhancedCharacterEditor {
 
     selectCharacterSlot(slotKey, element) {
         // Remove previous selection
-        document.querySelectorAll('.character-slot').forEach(slot => {
+        this.editorElement?.querySelectorAll('.character-slot').forEach(slot => {
             slot.classList.remove('selected');
         });
 
@@ -5150,6 +5000,11 @@ class EnhancedCharacterEditor {
 
         this.sendNUIMessage('characterEditor_loadCharacter', {
             characterKey: this.selectedCharacterSlot
+        }).then((result) => {
+            if (result && result.success && result.characterData) {
+                this.characterData = result.characterData;
+                this.updateSlidersFromCharacterData();
+            }
         });
     }
 
@@ -5159,22 +5014,18 @@ class EnhancedCharacterEditor {
         if (confirm('Are you sure you want to delete this character? This action cannot be undone.')) {
             this.sendNUIMessage('characterEditor_deleteCharacter', {
                 characterKey: this.selectedCharacterSlot
-            });
+            }).then((result) => {
+                if (!result || !result.success) {
+                    return;
+                }
 
-            // Refresh character slots
-            this.populateCharacterSlots();
-            
-            // Disable buttons
-            const loadBtn = document.getElementById('load-character-btn');
-            const deleteBtn = document.getElementById('delete-character-btn');
-            if (loadBtn) loadBtn.disabled = true;
-            if (deleteBtn) deleteBtn.disabled = true;
-            this.selectedCharacterSlot = null;
+                delete this.characterSlots[this.selectedCharacterSlot];
+                this.populateCharacterSlots();
+            });
         }
     }
 
     createNewCharacter() {
-        // Reset to default character
         this.resetCharacter();
     }
 
@@ -5184,53 +5035,27 @@ class EnhancedCharacterEditor {
 
     resetCharacter() {
         if (confirm('Are you sure you want to reset the character to default? All current changes will be lost.')) {
-            this.sendNUIMessage('characterEditor_reset', {});
-            
-            // Reset all sliders to default values
-            this.resetSlidersToDefault();
+            this.sendNUIMessage('characterEditor_reset', {}).then((result) => {
+                if (result && result.success && result.characterData) {
+                    this.characterData = result.characterData;
+                    this.updateSlidersFromCharacterData();
+                }
+            });
         }
     }
 
-    resetSlidersToDefault() {
-        document.querySelectorAll('#character-editor-container .slider').forEach(slider => {
-            const feature = slider.dataset.feature;
-            
-            // Set default values based on feature type
-            if (feature && (feature.includes('beard') || feature.includes('eyebrows') || feature.includes('makeup') || 
-                           feature.includes('blush') || feature.includes('lipstick') || feature.includes('ageing') ||
-                           feature.includes('complexion') || feature.includes('sundamage') || feature.includes('freckles') ||
-                           feature.includes('moles') || feature.includes('chesthair') || feature.includes('bodyBlemishes'))) {
-                slider.value = -1;
-            } else if (feature && feature.toLowerCase().includes('opacity')) {
-                slider.value = slider.dataset.feature === 'beardOpacity' || slider.dataset.feature === 'eyebrowsOpacity' ? 100 : 0;
-            } else if (slider.dataset.category === 'faceFeatures') {
-                slider.value = 0;
-            } else {
-                slider.value = 0;
-            }
-            
-            // Update value display
-            const valueDisplay = slider.parentElement.querySelector('.value-display');
-            if (valueDisplay) {
-                if (slider.value == -1) {
-                    valueDisplay.textContent = 'None';
-                } else if (feature && feature.toLowerCase().includes('opacity')) {
-                    valueDisplay.textContent = slider.value + '%';
-                } else {
-                    valueDisplay.textContent = slider.value;
-                }
-            }
-        });
-    }
-
-    closeEditor(save = false) {
+    closeEditor(save = false, notifyClient = true) {
         this.isOpen = false;
         const container = document.getElementById('character-editor-container');
         if (container) {
             container.classList.add('hidden');
         }
-        
-        this.sendNUIMessage(save ? 'characterEditor_save' : 'characterEditor_cancel', {});
+
+        if (notifyClient) {
+            this.sendNUIMessage(save ? 'characterEditor_save' : 'characterEditor_cancel', {});
+        } else {
+            this.sendNUIMessage('characterEditor_closed', { success: true });
+        }
     }
 
     openEditor(data) {
@@ -5240,6 +5065,8 @@ class EnhancedCharacterEditor {
         this.characterData = data.characterData || {};
         this.uniformPresets = data.uniformPresets || [];
         this.characterSlots = data.playerCharacters || {};
+        this.selectedUniformPreset = null;
+        this.selectedCharacterSlot = null;
 
         // Update UI
         const roleElement = document.getElementById('current-role');
@@ -5253,6 +5080,8 @@ class EnhancedCharacterEditor {
 
         // Update sliders with current character data
         this.updateSlidersFromCharacterData();
+        this.switchTab('appearance');
+        this.switchCamera('full', false);
 
         // Show editor
         const container = document.getElementById('character-editor-container');
@@ -5260,66 +5089,84 @@ class EnhancedCharacterEditor {
             container.classList.remove('hidden');
         }
 
+        this.sendNUIMessage('characterEditor_opened', { success: true });
+
         console.log('[CNR_CHARACTER_EDITOR] Opened enhanced character editor for', this.currentRole, 'slot', this.currentSlot);
     }
 
     updateSlidersFromCharacterData() {
         if (!this.characterData) return;
 
-        // Update basic appearance sliders
-        const basicFeatures = ['hair', 'hairColor', 'hairHighlight', 'eyeColor', 'beard', 'beardColor', 'beardOpacity',
-                              'eyebrows', 'eyebrowsColor', 'eyebrowsOpacity', 'makeup', 'makeupColor', 'makeupOpacity',
-                              'blush', 'blushColor', 'blushOpacity', 'lipstick', 'lipstickColor', 'lipstickOpacity'];
-        
-        basicFeatures.forEach(feature => {
-            const slider = document.querySelector(`#character-editor-container [data-feature="${feature}"]`);
-            if (slider && this.characterData[feature] !== undefined) {
-                let value = this.characterData[feature];
-                
-                // Convert opacity values to percentage
-                if (feature.toLowerCase().includes('opacity')) {
-                    value = Math.round(value * 100);
-                }
-                
-                slider.value = value;
-                
-                const valueDisplay = slider.parentElement.querySelector('.value-display');
-                if (valueDisplay) {
-                    if (value === -1) {
-                        valueDisplay.textContent = 'None';
-                    } else if (feature.toLowerCase().includes('opacity')) {
-                        valueDisplay.textContent = value + '%';
-                    } else {
-                        valueDisplay.textContent = value.toString();
-                    }
-                }
+        this.editorElement?.querySelectorAll('.slider[data-feature]').forEach((slider) => {
+            const feature = slider.dataset.feature;
+            const category = slider.dataset.category;
+            const source = category === 'faceFeatures'
+                ? (this.characterData.faceFeatures || {})
+                : this.characterData;
+
+            let value = source[feature];
+            if (value === undefined) {
+                value = slider.min === '-1' ? -1 : 0;
+            } else if (category === 'faceFeatures') {
+                value = Math.round(Number(value) * 100);
+            } else if (feature && feature.toLowerCase().includes('opacity')) {
+                value = Math.round(Number(value) * 100);
             }
+
+            slider.value = value;
+            this.updateSliderDisplay(slider, value);
         });
 
-        // Update facial feature sliders
-        if (this.characterData.faceFeatures) {
-            Object.keys(this.characterData.faceFeatures).forEach(feature => {
-                const slider = document.querySelector(`#character-editor-container [data-feature="${feature}"]`);
-                if (slider) {
-                    const value = Math.round(this.characterData.faceFeatures[feature] * 100); // Convert to percentage
-                    slider.value = value;
-                    
-                    const valueDisplay = slider.parentElement.querySelector('.value-display');
-                    if (valueDisplay) {
-                        valueDisplay.textContent = value.toString();
-                    }
-                }
-            });
+        const genderButtons = {
+            male: document.querySelector('#character-editor-container [data-gender="male"]'),
+            female: document.querySelector('#character-editor-container [data-gender="female"]')
+        };
+        const isFemaleModel = this.characterData.model === 'mp_f_freemode_01';
+        genderButtons.male?.classList.toggle('active', !isFemaleModel);
+        genderButtons.female?.classList.toggle('active', isFemaleModel);
+
+        this.clothingComponentDefinitions.forEach((definition) => {
+            this.syncClothingControl('component', definition.id, 'drawable', 0);
+            this.syncClothingControl('component', definition.id, 'texture', 0);
+        });
+
+        this.clothingPropDefinitions.forEach((definition) => {
+            this.syncClothingControl('prop', definition.id, 'drawable', definition.min);
+            this.syncClothingControl('prop', definition.id, 'texture', 0);
+        });
+
+        Object.entries(this.characterData.components || {}).forEach(([componentId, component]) => {
+            this.syncClothingControl('component', componentId, 'drawable', component.drawable ?? 0);
+            this.syncClothingControl('component', componentId, 'texture', component.texture ?? 0);
+        });
+
+        Object.entries(this.characterData.props || {}).forEach(([propId, prop]) => {
+            this.syncClothingControl('prop', propId, 'drawable', prop.drawable ?? -1);
+            this.syncClothingControl('prop', propId, 'texture', prop.texture ?? 0);
+        });
+    }
+
+    updateCharacterSlot(characterKey, characterData) {
+        this.characterSlots[characterKey] = characterData;
+        if (this.isOpen && characterKey.startsWith(`${this.currentRole}_`)) {
+            this.populateCharacterSlots();
         }
     }
 
     sendNUIMessage(action, data) {
-        fetch(`https://${this.resourceName}/${action}`, {
+        return fetch(`https://${this.resourceName}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            return response.json().catch(() => ({}));
         }).catch(error => {
             console.error('[CNR_CHARACTER_EDITOR] Error sending NUI message:', error);
+            return { success: false, error: error.message };
         });
     }
 }
