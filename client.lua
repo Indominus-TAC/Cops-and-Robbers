@@ -442,6 +442,7 @@ local playerCharacters = {}
 local previewingUniform = false
 local currentUniformPreset = nil
 local currentEditorCameraMode = "full"
+local currentEditorCameraOrbit = 0.0
 local isRoleSelectionVisible = false
 
 -- Character editor UI state
@@ -513,11 +514,11 @@ local function UpdateCharacterEditorCamera(mode)
     end
 
     local heading = GetEntityHeading(ped)
-    local headingRadians = math.rad(heading)
-    local forwardVector = vector3(-math.sin(headingRadians), math.cos(headingRadians), 0.0)
+    local orbitHeadingRadians = math.rad(heading + currentEditorCameraOrbit)
+    local orbitVector = vector3(-math.sin(orbitHeadingRadians), math.cos(orbitHeadingRadians), 0.0)
     local targetCoords = focusCoords + vector3(0.0, 0.0, targetHeightOffset)
-    local camX = focusCoords.x - forwardVector.x * distance
-    local camY = focusCoords.y - forwardVector.y * distance
+    local camX = focusCoords.x + orbitVector.x * distance
+    local camY = focusCoords.y + orbitVector.y * distance
     local camZ = focusCoords.z + heightOffset
 
     if not editorCamera or not DoesCamExist(editorCamera) then
@@ -1116,6 +1117,7 @@ function OpenCharacterEditor(role, characterSlot)
     isInCharacterEditor = true
     isRoleSelectionVisible = false
     currentEditorCameraMode = "full"
+    currentEditorCameraOrbit = 0.0
     DestroyCharacterEditorCamera()
     UpdateCharacterEditorCamera(currentEditorCameraMode)
     editorUI.isVisible = true
@@ -5070,10 +5072,8 @@ RegisterNUICallback('characterEditor_changeCamera', function(data, cb)
 end)
 
 RegisterNUICallback('characterEditor_rotateCharacter', function(data, cb)
-    local ped = PlayerPedId()
-    local currentHeading = GetEntityHeading(ped)
     local delta = (data and data.direction == 'right') and 15.0 or -15.0
-    SetEntityHeading(ped, currentHeading + delta)
+    currentEditorCameraOrbit = (currentEditorCameraOrbit + delta) % 360.0
     UpdateCharacterEditorCamera()
     cb({ success = true })
 end)
