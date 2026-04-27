@@ -1039,9 +1039,6 @@ end
 local function SetMenuFocus(hasFocus, hasCursor)
     SetNuiFocus(hasFocus, hasCursor)
     SetNuiFocusKeepInput(false)
-    if hasFocus and hasCursor then
-        SetCursorLocation(0.5, 0.5)
-    end
 end
 
 -- Open character editor
@@ -3018,8 +3015,6 @@ Citizen.CreateThread(function()
 end)
 
 Citizen.CreateThread(function()
-    local focusRefreshCounter = 0
-
     while true do
         if isRoleSelectionVisible or isInCharacterEditor then
             Citizen.Wait(0)
@@ -3043,14 +3038,7 @@ Citizen.CreateThread(function()
             DisableControlAction(0, 257, true)
             DisableControlAction(0, 263, true)
             DisableControlAction(0, 264, true)
-
-            focusRefreshCounter = focusRefreshCounter + 1
-            if focusRefreshCounter >= 30 then
-                SetMenuFocus(true, true)
-                focusRefreshCounter = 0
-            end
         else
-            focusRefreshCounter = 0
             Citizen.Wait(250)
         end
     end
