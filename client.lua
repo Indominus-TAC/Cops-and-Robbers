@@ -502,10 +502,10 @@ local function UpdateCharacterEditorCamera(mode)
         heightOffset = 0.01
         targetHeightOffset = 0.0
     elseif cameraMode == "body" then
-        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.98)
-        distance = 1.85
-        heightOffset = 0.08
-        targetHeightOffset = 0.03
+        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.72)
+        distance = 2.05
+        heightOffset = 0.02
+        targetHeightOffset = -0.05
     else
         focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.76)
         distance = 2.7
