@@ -611,6 +611,8 @@ function showRoleSelection() {
         roleSelectionUI.querySelectorAll('button[data-role]').forEach((button) => {
             button.disabled = false;
         });
+        document.body.style.display = 'block';
+        document.body.style.visibility = 'visible';
         roleSelectionUI.classList.remove('hidden');
         roleSelectionUI.style.display = '';
         roleSelectionUI.style.visibility = 'visible';
@@ -3920,18 +3922,34 @@ function syncClothingControl(entryType, targetId, valueType, value) {
     }
 }
 
+function ensureEnhancedCharacterEditor() {
+    if (window.enhancedCharacterEditor && window.enhancedCharacterEditor.editorElement) {
+        return window.enhancedCharacterEditor;
+    }
+
+    const editorElement = document.getElementById('character-editor-container');
+    if (!editorElement) {
+        return null;
+    }
+
+    window.enhancedCharacterEditor = new EnhancedCharacterEditor();
+    return window.enhancedCharacterEditor;
+}
+
 function openCharacterEditor(data) {
-    if (!window.enhancedCharacterEditor) {
+    const editor = ensureEnhancedCharacterEditor();
+    if (!editor) {
         console.error('[CNR_CHARACTER_EDITOR] Enhanced character editor is not initialized');
         return;
     }
 
-    window.enhancedCharacterEditor.openEditor(data);
+    editor.openEditor(data);
 }
 
 function closeCharacterEditor() {
-    if (window.enhancedCharacterEditor) {
-        window.enhancedCharacterEditor.closeEditor(false, false);
+    const editor = ensureEnhancedCharacterEditor();
+    if (editor) {
+        editor.closeEditor(false, false);
     }
 }
 
@@ -5068,6 +5086,9 @@ class EnhancedCharacterEditor {
         this.selectedUniformPreset = null;
         this.selectedCharacterSlot = null;
 
+        document.body.style.display = 'block';
+        document.body.style.visibility = 'visible';
+
         // Update UI
         const roleElement = document.getElementById('current-role');
         const slotElement = document.getElementById('current-slot');
@@ -5087,8 +5108,11 @@ class EnhancedCharacterEditor {
         const container = document.getElementById('character-editor-container');
         if (container) {
             container.classList.remove('hidden');
+            container.style.display = 'grid';
+            container.style.visibility = 'visible';
         }
 
+        fetchSetNuiFocus(true, true);
         this.sendNUIMessage('characterEditor_opened', { success: true });
 
         console.log('[CNR_CHARACTER_EDITOR] Opened enhanced character editor for', this.currentRole, 'slot', this.currentSlot);

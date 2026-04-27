@@ -1114,7 +1114,7 @@ function OpenCharacterEditor(role, characterSlot)
     
     Citizen.SetTimeout(100, function()
         if isInCharacterEditor then
-            SetNuiFocus(true, true)
+            SetMenuFocus(true, true)
         end
     end)
 end
@@ -1228,6 +1228,11 @@ local xpGainTimer = 0
 local currentXP = 0
 local currentLevel = 1
 local currentNextLvlXP = 100
+
+local function SetMenuFocus(hasFocus, hasCursor)
+    SetNuiFocus(hasFocus, hasCursor)
+    SetNuiFocusKeepInput(false)
+end
 
 -- Enhanced logging function
 local function LogProgressionClient(message, level)
@@ -2740,7 +2745,12 @@ AddEventHandler('playerSpawned', function()
     -- Only show role selection if player doesn't have a role yet
     if not role or role == "" then
         SendNUIMessage({ action = 'showRoleSelection', resourceName = GetCurrentResourceName() })
-        SetNuiFocus(true, true) -- Ensure mouse pointer appears for role selection
+        SetMenuFocus(true, true)
+        Citizen.SetTimeout(100, function()
+            if not role or role == "" then
+                SetMenuFocus(true, true)
+            end
+        end)
     else
         -- Player already has a role, respawn them at their role's spawn point
         local spawnPoint = Config.SpawnPoints[role]
@@ -2876,13 +2886,13 @@ RegisterNetEvent('cnr:roleSelected')
 AddEventHandler('cnr:roleSelected', function(success, message)
     if success then
         SendNUIMessage({ action = 'hideRoleSelection' })
-        SetNuiFocus(false, false)
+        SetMenuFocus(false, false)
     else
         SendNUIMessage({
             action = 'roleSelectionFailed',
             error = message or 'Role selection failed.'
         })
-        SetNuiFocus(true, true)
+        SetMenuFocus(true, true)
     end
 
     if message and message ~= "" then
@@ -3010,7 +3020,7 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
     SendNUIMessage({
         action = 'hideRoleActionMenus'
     })
-    SetNuiFocus(false, false)
+    SetMenuFocus(false, false)
 
     if role ~= "cop" then
         SyncPoliceDispatchBlips({})
@@ -3207,7 +3217,7 @@ RegisterNUICallback('selectRole', function(data, cb)
     -- Close the UI immediately so the player is not left stuck in the menu while
     -- the server finishes role sync. Failure events will reopen it if needed.
     SendNUIMessage({ action = 'hideRoleSelection' })
-    SetNuiFocus(false, false)
+    SetMenuFocus(false, false)
     
     -- Return success to NUI
     cb({ success = true })
@@ -3307,7 +3317,10 @@ AddEventHandler('cnr:showRoleSelection', function()
         action = 'showRoleSelection', 
         resourceName = GetCurrentResourceName() 
     })
-    SetNuiFocus(true, true)
+    SetMenuFocus(true, true)
+    Citizen.SetTimeout(100, function()
+        SetMenuFocus(true, true)
+    end)
 end)
 
 -- =====================================
@@ -5567,7 +5580,7 @@ end)
 RegisterNUICallback('setNuiFocus', function(data, cb)
     Log("NUI requested SetNuiFocus: " .. tostring(data.hasFocus) .. ", " .. tostring(data.hasCursor), "info", "CNR_INV_CLIENT")
 
-    SetNuiFocus(data.hasFocus or false, data.hasCursor or false)
+    SetMenuFocus(data.hasFocus or false, data.hasCursor or false)
 
     if not data.hasFocus then
         adminPanelVisible = false
