@@ -281,6 +281,9 @@ window.addEventListener('message', function(event) {
         case 'showPoliceMenu':
             showPoliceMenu(data);
             break;
+        case 'showPdGarageMenu':
+            showPdGarageMenu(data.garage || data);
+            break;
         case 'hideRoleActionMenus':
             hideRoleActionMenus();
             break;
@@ -1859,9 +1862,11 @@ window.addEventListener('keydown', function(event) {
         const storeMenu = document.getElementById('store-menu');
         const adminPanel = document.getElementById('admin-panel');
         const bountyBoardPanel = document.getElementById('bounty-board');
+        const pdGarageMenu = document.getElementById('pd-garage-menu');
         if (storeMenu && storeMenu.style.display === 'block') closeStoreMenu();
         else if (adminPanel && adminPanel.style.display !== 'none' && !adminPanel.classList.contains('hidden')) hideAdminPanel();
         else if (bountyBoardPanel && bountyBoardPanel.style.display !== 'none' && !bountyBoardPanel.classList.contains('hidden')) hideBountyBoardUI();
+        else if (pdGarageMenu && !pdGarageMenu.classList.contains('hidden')) hidePdGarageMenu();
     }
 });
 
@@ -3066,6 +3071,7 @@ let isPoliceMenuOpen = false;
 let policeCadRefreshInterval = null;
 let latestPoliceCadData = { officers: [], calls: [], suspects: [] };
 let latestCitationReasons = [];
+let isPdGarageMenuOpen = false;
 
 function hideRoleActionMenus() {
     const policeMenu = document.getElementById('police-menu');
@@ -3078,6 +3084,11 @@ function hideRoleActionMenus() {
         robberMenu.classList.add('hidden');
     }
 
+    const pdGarageMenu = document.getElementById('pd-garage-menu');
+    if (pdGarageMenu) {
+        pdGarageMenu.classList.add('hidden');
+    }
+
     if (policeCadRefreshInterval) {
         clearInterval(policeCadRefreshInterval);
         policeCadRefreshInterval = null;
@@ -3086,6 +3097,180 @@ function hideRoleActionMenus() {
     document.body.classList.remove('menu-open');
     isPoliceMenuOpen = false;
     isRobberMenuOpen = false;
+    isPdGarageMenuOpen = false;
+}
+
+function renderPdGarageVehicleList(vehicles = []) {
+    if (!Array.isArray(vehicles) || vehicles.length === 0) {
+        return `
+            <div class="menu-result role-status-panel">
+                No PD vehicles are currently authorized for your rank.
+            </div>
+        `;
+    }
+
+    return vehicles.map((vehicle) => `
+        <button class="menu-btn pd-garage-vehicle-btn" data-model="${escapeHtml(vehicle.model || '')}">
+            <span class="icon">🚓</span>
+            <span>
+                <strong>${escapeHtml(vehicle.label || vehicle.model || 'PD Vehicle')}</strong><br>
+                <small>${escapeHtml(`${vehicle.category || 'PD Vehicle'} • ${vehicle.accessLabel || 'Authorized'}`)}</small>
+            </span>
+        </button>
+    `).join('');
+}
+
+function updatePdGarageMenu(garage = {}) {
+    const titleEl = document.getElementById('pd-garage-title');
+    const subtitleEl = document.getElementById('pd-garage-subtitle');
+    const summaryEl = document.getElementById('pd-garage-summary');
+    const listEl = document.getElementById('pd-garage-vehicle-list');
+
+    if (titleEl) {
+        titleEl.textContent = garage.title || 'PD Garage';
+    }
+    if (subtitleEl) {
+        subtitleEl.textContent = garage.subtitle || 'Authorized police vehicles and support services.';
+    }
+    if (summaryEl) {
+        const activeCount = Number(garage.activeVehicleCount || 0);
+        const maxCount = Number(garage.maxActiveVehicles || 0);
+        summaryEl.textContent = maxCount > 0
+            ? `Active issued vehicles: ${activeCount}/${maxCount}`
+            : `Active issued vehicles: ${activeCount}`;
+    }
+    if (listEl) {
+        listEl.innerHTML = renderPdGarageVehicleList(garage.vehicles || []);
+    }
+}
+
+function showPdGarageMenu(garage = {}) {
+    hideRoleActionMenus();
+
+    let menu = document.getElementById('pd-garage-menu');
+    if (!menu) {
+        menu = document.createElement('section');
+        menu.id = 'pd-garage-menu';
+        menu.className = 'menu role-action-menu role-action-menu--police hidden';
+        menu.setAttribute('role', 'dialog');
+        menu.setAttribute('aria-modal', 'true');
+        menu.setAttribute('aria-labelledby', 'pdGarageHeading');
+        menu.innerHTML = `
+            <div class="menu-header role-menu-header">
+                <div>
+                    <p class="role-menu-kicker">Mission Row Motor Pool</p>
+                    <h1 id="pdGarageHeading">PD Garage</h1>
+                    <p id="pd-garage-subtitle" class="role-menu-subtitle">Authorized police vehicles and support services.</p>
+                </div>
+                <button id="pd-garage-close-btn" class="close-btn" aria-label="Close PD Garage">
+                    <span class="close-icon">✕</span>
+                </button>
+            </div>
+            <div class="role-menu-layout role-menu-layout--single">
+                <div class="role-menu-main">
+                    <section class="role-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2 id="pd-garage-title">PD Garage</h2>
+                                <p id="pd-garage-summary">Active issued vehicles: 0</p>
+                            </div>
+                        </div>
+                        <div id="pd-garage-vehicle-list" class="role-action-grid"></div>
+                    </section>
+                    <section class="role-card">
+                        <div class="role-card-heading">
+                            <div>
+                                <h2>Garage Actions</h2>
+                                <p>Return issued units, service patrol cars, and clean up abandoned PD vehicles.</p>
+                            </div>
+                        </div>
+                        <div class="role-action-grid">
+                            <button id="pd-garage-store-btn" class="menu-btn"><span class="icon">📥</span>Store Current Vehicle</button>
+                            <button id="pd-garage-repair-btn" class="menu-btn"><span class="icon">🔧</span>Repair Vehicle</button>
+                            <button id="pd-garage-refuel-btn" class="menu-btn"><span class="icon">⛽</span>Refuel Vehicle</button>
+                            <button id="pd-garage-delete-btn" class="menu-btn"><span class="icon">🧹</span>Delete Abandoned PD Vehicle</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(menu);
+    }
+
+    updatePdGarageMenu(garage);
+    menu.classList.remove('hidden');
+    document.body.classList.add('menu-open');
+    isPdGarageMenuOpen = true;
+    setupPdGarageMenuListeners();
+}
+
+function hidePdGarageMenu() {
+    const menu = document.getElementById('pd-garage-menu');
+    if (menu) {
+        menu.classList.add('hidden');
+    }
+    document.body.classList.remove('menu-open');
+    isPdGarageMenuOpen = false;
+    fetchSetNuiFocus(false, false);
+}
+
+async function performPdGarageAction(endpoint, payload = {}, successMessage = 'Garage action completed.') {
+    try {
+        const response = await fetch(`https://${CNRConfig.getResourceName()}/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (result && result.success) {
+            showToast(successMessage, 'success');
+            return true;
+        }
+
+        showToast((result && result.error) || 'Garage action failed.', 'error');
+        return false;
+    } catch (error) {
+        showToast('Garage action failed.', 'error');
+        return false;
+    }
+}
+
+function setupPdGarageMenuListeners() {
+    const bindOnce = (id, handler) => {
+        const el = document.getElementById(id);
+        if (el && !el.hasEventListener) {
+            el.addEventListener('click', handler);
+            el.hasEventListener = true;
+        }
+    };
+
+    bindOnce('pd-garage-close-btn', hidePdGarageMenu);
+    bindOnce('pd-garage-store-btn', () => performPdGarageAction('pdGarageStoreVehicle', {}, 'PD vehicle stored.'));
+    bindOnce('pd-garage-repair-btn', () => performPdGarageAction('pdGarageRepairVehicle', {}, 'PD vehicle repaired.'));
+    bindOnce('pd-garage-refuel-btn', () => performPdGarageAction('pdGarageRefuelVehicle', {}, 'PD vehicle refueled.'));
+    bindOnce('pd-garage-delete-btn', () => performPdGarageAction('pdGarageDeleteAbandoned', {}, 'Abandoned PD vehicle deleted.'));
+
+    const menu = document.getElementById('pd-garage-menu');
+    if (menu && !menu.hasVehicleListener) {
+        menu.addEventListener('click', async (event) => {
+            const vehicleButton = event.target.closest('.pd-garage-vehicle-btn');
+            if (!vehicleButton) {
+                return;
+            }
+
+            const model = vehicleButton.dataset.model;
+            if (!model) {
+                showToast('Invalid PD vehicle selection.', 'error');
+                return;
+            }
+
+            const success = await performPdGarageAction('pdGarageSpawnVehicle', { model }, 'PD vehicle deployed.');
+            if (success) {
+                hidePdGarageMenu();
+            }
+        });
+        menu.hasVehicleListener = true;
+    }
 }
 
 function showPoliceMenu(data = {}) {
@@ -3141,7 +3326,7 @@ function showPoliceMenu(data = {}) {
                             </div>
                         </div>
                         <div class="role-action-grid">
-                            <button id="police-call-vehicle-btn" class="menu-btn"><span class="icon">🚓</span>Call Patrol Vehicle</button>
+                            <button id="police-call-vehicle-btn" class="menu-btn"><span class="icon">🚓</span>Open PD Garage</button>
                             <button id="police-request-assist-btn" class="menu-btn"><span class="icon">📻</span>Request Assistance</button>
                             <button id="police-request-urgent-assist-btn" class="menu-btn"><span class="icon">🚨</span>Urgent Backup</button>
                             <button id="police-view-bounties-btn" class="menu-btn"><span class="icon">🔎</span>Wanted Players</button>
@@ -3475,10 +3660,10 @@ function setupPoliceMenuListeners() {
 
     bindOnce('police-menu-close-btn', hidePoliceMenu);
     bindOnce('police-call-vehicle-btn', () => {
-        fetch(`https://${CNRConfig.getResourceName()}/callRoleVehicle`, {
+        fetch(`https://${CNRConfig.getResourceName()}/requestPdGarageMenu`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: 'cop' })
+            body: JSON.stringify({})
         });
         hidePoliceMenu();
     });

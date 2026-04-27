@@ -57,6 +57,9 @@ RegisterNetEvent('cnr:policeAlert')
 RegisterNetEvent('cnr:receivePoliceCadData')
 RegisterNetEvent('cnr:receiveAdminLiveMapData')
 RegisterNetEvent('cnr:receiveRoleTextMessage')
+RegisterNetEvent('cnr:showPdGarageMenu')
+RegisterNetEvent('cnr:pdGarageSpawnApproved')
+RegisterNetEvent('cnr:cleanupPdGarageVehicles')
 
 -- =====================================
 --           VARIABLES
@@ -155,6 +158,7 @@ local localPlayerInventory = {}
 local localPlayerEquippedItems = {}
 local pendingPoliceLookupCallbacks = {}
 local pendingPoliceCadCallbacks = {}
+local pendingPdGarageSpawnCallbacks = {}
 local roleSelectionShownForCurrentDeath = false
 local deathReportedForCurrentLife = false
 local adminNoClipEnabled = false
@@ -162,6 +166,8 @@ local adminInvisibleEnabled = false
 local adminSpectateTargetServerId = nil
 local adminPanelVisible = false
 local activeRoleActionMenu = nil
+local trackedPdGarageVehicles = {}
+local CreatePersistentRoleVehicle
 local adminPanelRequestStartedAt = 0
 local ADMIN_PANEL_REQUEST_GUARD_MS = 1500
 
@@ -1504,6 +1510,383 @@ local function ClearStoreHelpText()
     end
 end
 
+local function GetPdGarageConfig()
+    if Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled then
+        return Config.PDGarage
+    end
+
+    return nil
+end
+
+local function GetPdGarageInteractionLocation()
+    local garage = GetPdGarageConfig()
+    if garage and garage.interaction then
+        return garage.interaction.location
+    end
+
+    return nil
+end
+
+local function CanUsePdGarageLocally()
+    if role == "cop" then
+        return true
+    end
+
+    return playerData and (playerData.isAdmin == true or playerData.role == "admin")
+end
+
+local function IsPlayerNearPdGarage(extraRadius)
+    local garageLocation = GetPdGarageInteractionLocation()
+    local garage = GetPdGarageConfig()
+    if not garageLocation or not garage or not garage.interaction then
+        return false
+    end
+
+    local playerPed = PlayerPedId()
+    if not playerPed or playerPed == 0 then
+        return false
+    end
+
+    local playerCoords = GetEntityCoords(playerPed)
+    local radius = (tonumber(garage.interaction.radius) or 3.0) + (tonumber(extraRadius) or 0.0)
+    return #(playerCoords - garageLocation) <= radius
+end
+
+local function GetTrackedPdGarageVehicleKey(vehicle)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
+        return nil, nil
+    end
+
+    if NetworkGetEntityIsNetworked(vehicle) then
+        local netId = NetworkGetNetworkIdFromEntity(vehicle)
+        if netId and netId ~= 0 then
+            return ("net:%s"):format(netId), netId
+        end
+    end
+
+    return ("ent:%s"):format(vehicle), nil
+end
+
+local function TrackPdGarageVehicle(vehicle, modelName)
+    local key, netId = GetTrackedPdGarageVehicleKey(vehicle)
+    if not key then
+        return nil
+    end
+
+    trackedPdGarageVehicles[key] = {
+        entity = vehicle,
+        netId = netId,
+        model = tostring(modelName or GetEntityModel(vehicle)),
+        spawnedAt = GetGameTimer()
+    }
+
+    return trackedPdGarageVehicles[key]
+end
+
+local function UntrackPdGarageVehicle(vehicleOrKey)
+    if type(vehicleOrKey) == "string" then
+        trackedPdGarageVehicles[vehicleOrKey] = nil
+        return
+    end
+
+    local key = select(1, GetTrackedPdGarageVehicleKey(vehicleOrKey))
+    if key then
+        trackedPdGarageVehicles[key] = nil
+    end
+end
+
+local function GetTrackedPdGarageVehicle(vehicle)
+    local key = select(1, GetTrackedPdGarageVehicleKey(vehicle))
+    if key then
+        return trackedPdGarageVehicles[key], key
+    end
+
+    return nil, nil
+end
+
+local function PruneTrackedPdGarageVehicles()
+    for key, vehicleData in pairs(trackedPdGarageVehicles) do
+        if not vehicleData or not vehicleData.entity or vehicleData.entity == 0 or not DoesEntityExist(vehicleData.entity) then
+            trackedPdGarageVehicles[key] = nil
+        end
+    end
+end
+
+local function FindNearbyTrackedPdGarageVehicle(originCoords, maxDistance, requireEmpty)
+    PruneTrackedPdGarageVehicles()
+
+    local searchOrigin = originCoords
+    if not searchOrigin then
+        local playerPed = PlayerPedId()
+        if playerPed and playerPed ~= 0 then
+            searchOrigin = GetEntityCoords(playerPed)
+        end
+    end
+
+    if not searchOrigin then
+        return nil, nil
+    end
+
+    local nearestVehicle = nil
+    local nearestKey = nil
+    local nearestDistance = tonumber(maxDistance) or 6.0
+
+    for key, vehicleData in pairs(trackedPdGarageVehicles) do
+        local vehicle = vehicleData.entity
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+            if not requireEmpty or IsVehicleSeatFree(vehicle, -1) then
+                local distance = #(GetEntityCoords(vehicle) - searchOrigin)
+                if distance <= nearestDistance then
+                    nearestDistance = distance
+                    nearestVehicle = vehicle
+                    nearestKey = key
+                end
+            end
+        end
+    end
+
+    return nearestVehicle, nearestKey
+end
+
+local function DeleteTrackedPdGarageVehicle(vehicle)
+    if not vehicle or vehicle == 0 then
+        return true
+    end
+
+    if not DoesEntityExist(vehicle) then
+        UntrackPdGarageVehicle(vehicle)
+        return true
+    end
+
+    if NetworkGetEntityIsNetworked(vehicle) and not NetworkHasControlOfEntity(vehicle) then
+        NetworkRequestControlOfEntity(vehicle)
+        local attempts = 0
+        while not NetworkHasControlOfEntity(vehicle) and attempts < 20 do
+            Citizen.Wait(25)
+            NetworkRequestControlOfEntity(vehicle)
+            attempts = attempts + 1
+        end
+    end
+
+    SetEntityAsMissionEntity(vehicle, true, true)
+    DeleteVehicle(vehicle)
+    if DoesEntityExist(vehicle) then
+        DeleteEntity(vehicle)
+    end
+
+    local deleted = not DoesEntityExist(vehicle)
+    if deleted then
+        UntrackPdGarageVehicle(vehicle)
+    end
+
+    return deleted
+end
+
+local function CleanupPdGarageVehicles()
+    PruneTrackedPdGarageVehicles()
+
+    for key, vehicleData in pairs(trackedPdGarageVehicles) do
+        local vehicle = vehicleData and vehicleData.entity or nil
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+            local netId = vehicleData.netId or NetworkGetNetworkIdFromEntity(vehicle)
+            if DeleteTrackedPdGarageVehicle(vehicle) and netId and netId ~= 0 then
+                TriggerServerEvent('cnr:unregisterPdGarageVehicle', netId)
+            end
+        end
+
+        trackedPdGarageVehicles[key] = nil
+    end
+end
+
+local function GetPdGarageServiceVehicle()
+    local playerPed = PlayerPedId()
+    if not playerPed or playerPed == 0 then
+        return nil
+    end
+
+    if IsPedInAnyVehicle(playerPed, false) then
+        local currentVehicle = GetVehiclePedIsIn(playerPed, false)
+        if GetTrackedPdGarageVehicle(currentVehicle) then
+            return currentVehicle
+        end
+    end
+
+    return FindNearbyTrackedPdGarageVehicle(nil, 7.5, false)
+end
+
+local function StoreCurrentPdGarageVehicle()
+    local garage = GetPdGarageConfig()
+    if not garage then
+        return false, "PD garage is unavailable."
+    end
+
+    if not IsPlayerNearPdGarage((tonumber(garage.returnRadius) or 30.0) - (tonumber(garage.interaction.radius) or 3.0)) then
+        return false, "Bring the vehicle back to the PD garage first."
+    end
+
+    local playerPed = PlayerPedId()
+    if not IsPedInAnyVehicle(playerPed, false) then
+        return false, "Sit in an authorized PD vehicle to store it."
+    end
+
+    local vehicle = GetVehiclePedIsIn(playerPed, false)
+    local trackedData = GetTrackedPdGarageVehicle(vehicle)
+    if not trackedData then
+        return false, "This vehicle was not issued by the PD garage."
+    end
+
+    if GetPedInVehicleSeat(vehicle, -1) ~= playerPed then
+        return false, "You must be the driver to return this PD vehicle."
+    end
+
+    local netId = trackedData.netId or NetworkGetNetworkIdFromEntity(vehicle)
+    if DeleteTrackedPdGarageVehicle(vehicle) then
+        if netId and netId ~= 0 then
+            TriggerServerEvent('cnr:unregisterPdGarageVehicle', netId)
+        end
+        return true, "PD vehicle stored and cleaned up."
+    end
+
+    return false, "Unable to store this PD vehicle right now."
+end
+
+local function RepairPdGarageVehicle()
+    if not IsPlayerNearPdGarage(4.0) then
+        return false, "Move closer to the PD garage service area."
+    end
+
+    local vehicle = GetPdGarageServiceVehicle()
+    if not vehicle then
+        return false, "No authorized PD vehicle is ready for service."
+    end
+
+    SetVehicleFixed(vehicle)
+    SetVehicleDeformationFixed(vehicle)
+    SetVehicleDirtLevel(vehicle, 0.0)
+    SetVehicleUndriveable(vehicle, false)
+    SetVehicleEngineOn(vehicle, false, true, false)
+    return true, "PD vehicle repaired."
+end
+
+local function RefuelPdGarageVehicle()
+    if not IsPlayerNearPdGarage(4.0) then
+        return false, "Move closer to the PD garage fuel point."
+    end
+
+    local vehicle = GetPdGarageServiceVehicle()
+    if not vehicle then
+        return false, "No authorized PD vehicle is ready for refuel."
+    end
+
+    if type(SetVehicleFuelLevel) == "function" then
+        SetVehicleFuelLevel(vehicle, 100.0)
+    end
+
+    SetVehicleEngineOn(vehicle, false, true, false)
+    return true, "PD vehicle refueled."
+end
+
+local function DeleteAbandonedPdGarageVehicle()
+    local garage = GetPdGarageConfig()
+    local garageLocation = GetPdGarageInteractionLocation()
+    if not garage or not garageLocation then
+        return false, "PD garage is unavailable."
+    end
+
+    if not IsPlayerNearPdGarage(5.0) then
+        return false, "Move to the PD garage cleanup point first."
+    end
+
+    local vehicle, key = FindNearbyTrackedPdGarageVehicle(
+        garageLocation,
+        tonumber(garage.abandonedDeleteRadius) or 45.0,
+        true
+    )
+
+    if not vehicle then
+        return false, "No abandoned PD vehicle was found near the garage."
+    end
+
+    local trackedData = trackedPdGarageVehicles[key]
+    local netId = trackedData and trackedData.netId or NetworkGetNetworkIdFromEntity(vehicle)
+    if DeleteTrackedPdGarageVehicle(vehicle) then
+        if netId and netId ~= 0 then
+            TriggerServerEvent('cnr:unregisterPdGarageVehicle', netId)
+        end
+        return true, "Abandoned PD vehicle deleted."
+    end
+
+    return false, "Unable to delete the abandoned PD vehicle."
+end
+
+local function SelectPdGarageSpawnPoint(spawnPoints, clearRadius)
+    local radius = tonumber(clearRadius) or 4.0
+    for _, spawnPoint in ipairs(spawnPoints or {}) do
+        local spawnCoords = GetEntryCoords(spawnPoint)
+        if spawnCoords and not IsAnyVehicleNearPoint(spawnCoords.x, spawnCoords.y, spawnCoords.z, radius) then
+            return spawnPoint
+        end
+    end
+
+    return nil
+end
+
+local function SpawnApprovedPdGarageVehicle(payload)
+    local selectedVehicle = payload and payload.vehicle or nil
+    if not selectedVehicle or not selectedVehicle.model then
+        return false, "Invalid PD vehicle selection."
+    end
+
+    local spawnPoint = SelectPdGarageSpawnPoint(payload.spawnPoints or {}, payload.spawnClearRadius)
+    if not spawnPoint then
+        return false, "All PD garage bays are blocked."
+    end
+
+    local vehicleSpawn = {
+        location = spawnPoint.location or spawnPoint,
+        heading = GetEntryHeading(spawnPoint),
+        model = selectedVehicle.model
+    }
+
+    local vehicle = CreatePersistentRoleVehicle(vehicleSpawn, selectedVehicle.model, "PD")
+    if not vehicle or not DoesEntityExist(vehicle) then
+        return false, "Unable to spawn that PD vehicle."
+    end
+
+    SetVehicleDirtLevel(vehicle, 0.0)
+    SetVehicleEngineHealth(vehicle, 1000.0)
+    SetVehicleBodyHealth(vehicle, 1000.0)
+    if type(SetVehicleFuelLevel) == "function" then
+        SetVehicleFuelLevel(vehicle, 100.0)
+    end
+
+    local trackedData = TrackPdGarageVehicle(vehicle, selectedVehicle.model)
+    if trackedData and trackedData.netId and trackedData.netId ~= 0 then
+        TriggerServerEvent('cnr:registerPdGarageVehicle', trackedData.netId, selectedVehicle.model)
+    end
+
+    local playerPed = PlayerPedId()
+    if playerPed and playerPed ~= 0 and GetPedInVehicleSeat(vehicle, -1) == 0 then
+        SetPedIntoVehicle(playerPed, vehicle, -1)
+    end
+
+    return true, selectedVehicle.label or selectedVehicle.model
+end
+
+local function RequestPdGarageMenu()
+    if not GetPdGarageConfig() then
+        ShowNotification("~r~PD garage is currently unavailable.")
+        return
+    end
+
+    if not CanUsePdGarageLocally() then
+        ShowNotification("~r~Only active police officers can use the PD garage.")
+        return
+    end
+
+    TriggerServerEvent('cnr:requestPdGarageMenu')
+end
+
 local function ClearDroppedWorldItemHelpText()
     activeDroppedItemHelpText = nil
 end
@@ -2134,6 +2517,30 @@ AddEventHandler('cnr:showPoliceMenu', function()
     SetNuiFocus(true, true)
 end)
 
+AddEventHandler('cnr:showPdGarageMenu', function(payload)
+    if adminPanelVisible or IsAdminPanelRequestPending() then
+        return
+    end
+
+    ClearAdminPanelRequest()
+    activeRoleActionMenu = "pd_garage"
+
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
+
+    SendNUIMessage({
+        action = 'showPdGarageMenu',
+        resourceName = GetCurrentResourceName(),
+        garage = payload or {}
+    })
+    SetMenuFocus(true, true)
+end)
+
+AddEventHandler('cnr:cleanupPdGarageVehicles', function()
+    CleanupPdGarageVehicles()
+end)
+
 AddEventHandler('cnr:adminTeleportToCoords', function(coords)
     local ped = PlayerPedId()
     if not ped or ped == 0 or not coords then
@@ -2707,10 +3114,10 @@ function SpawnRobberVehicles()
     end
 end
 
-local function CreatePersistentRoleVehicle(vehicleSpawn, defaultModel, platePrefix)
+CreatePersistentRoleVehicle = function(vehicleSpawn, defaultModel, platePrefix)
     if not vehicleSpawn or not vehicleSpawn.location then
         return nil
-    end
+end
 
     local modelName = vehicleSpawn.model or defaultModel
     local modelHash = GetHashKey(modelName)
@@ -2766,6 +3173,11 @@ local function CreatePersistentRoleVehicle(vehicleSpawn, defaultModel, platePref
 end
 
 function SpawnPoliceVehicles()
+    local garage = GetPdGarageConfig()
+    if garage and garage.disableStaticPoliceSpawns then
+        return
+    end
+
     if g_policeVehiclesSpawned then
         return
     end
@@ -3003,6 +3415,39 @@ AddEventHandler('cnr:receivePoliceCadData', function(requestId, cadData, citatio
     })
 end)
 
+AddEventHandler('cnr:pdGarageSpawnApproved', function(requestId, result)
+    local callback = requestId and pendingPdGarageSpawnCallbacks[requestId] or nil
+    if callback then
+        pendingPdGarageSpawnCallbacks[requestId] = nil
+    end
+
+    if not result or result.success ~= true then
+        local errorMessage = (result and result.error) or "Unable to authorize that PD vehicle."
+        if callback then
+            callback({
+                success = false,
+                error = errorMessage
+            })
+        end
+        ShowNotification("~r~" .. errorMessage)
+        return
+    end
+
+    local success, vehicleLabelOrError = SpawnApprovedPdGarageVehicle(result)
+    if callback then
+        callback({
+            success = success,
+            error = success and nil or vehicleLabelOrError
+        })
+    end
+
+    if success then
+        ShowNotification("~g~Spawned " .. tostring(vehicleLabelOrError) .. ".")
+    else
+        ShowNotification("~r~" .. tostring(vehicleLabelOrError))
+    end
+end)
+
 AddEventHandler('cnr:receiveAdminLiveMapData', function(requestId, liveMapData)
     local callback = requestId and pendingAdminLiveMapCallbacks[requestId] or nil
     local payload = liveMapData or {
@@ -3124,6 +3569,7 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
 
     if role ~= "cop" then
         SyncPoliceDispatchBlips({})
+        CleanupPdGarageVehicles()
     end
 
     UpdateActivityBlips()
@@ -5367,6 +5813,8 @@ end)
 -- Clean up banking props when resource stops
 AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() == resourceName then
+        CleanupPdGarageVehicles()
+
         -- Clean up ATM props
         for _, atm in pairs(atmProps) do
             if atm.prop and DoesEntityExist(atm.prop) then
@@ -5817,8 +6265,7 @@ local function SpawnRequestedRoleVehicle(requestedRole)
     local platePrefix = "CNR"
 
     if normalizedRole == "cop" then
-        modelName = (Config.PoliceVehicles and Config.PoliceVehicles[1]) or "police"
-        platePrefix = "PD"
+        return nil
     elseif normalizedRole == "robber" then
         modelName = (Config.RobberVehicleSpawns and Config.RobberVehicleSpawns[1] and Config.RobberVehicleSpawns[1].model)
             or (Config.CivilianVehicles and Config.CivilianVehicles[1])
@@ -6201,6 +6648,47 @@ Citizen.CreateThread(function()
     end
 end)
 
+Citizen.CreateThread(function()
+    while true do
+        local garage = GetPdGarageConfig()
+        local waitTime = 1000
+
+        if garage and CanUsePdGarageLocally() then
+            local playerPed = PlayerPedId()
+            local garageLocation = GetPdGarageInteractionLocation()
+
+            if playerPed and playerPed ~= 0 and garageLocation then
+                local playerCoords = GetEntityCoords(playerPed)
+                local distance = #(playerCoords - garageLocation)
+                local drawDistance = tonumber(garage.interaction and garage.interaction.drawDistance) or 35.0
+
+                if distance <= drawDistance then
+                    waitTime = 0
+                    DrawMarker(
+                        1,
+                        garageLocation.x, garageLocation.y, garageLocation.z - 1.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        2.25, 2.25, 0.8,
+                        45, 120, 255, 140,
+                        false, false, 2, false, nil, nil, false
+                    )
+
+                    if distance <= (tonumber(garage.interaction and garage.interaction.radius) or 3.0) then
+                        DisplayHelpText((garage.interaction and garage.interaction.helpText) or "Press ~INPUT_CONTEXT~ to access the PD garage")
+                        if IsControlJustPressed(0, 38) then
+                            RequestPdGarageMenu()
+                            Citizen.Wait(250)
+                        end
+                    end
+                end
+            end
+        end
+
+        Citizen.Wait(waitTime)
+    end
+end)
+
 RegisterNUICallback('equipInventoryItem', function(data, cb)
     local itemId = tostring(data and data.itemId or "")
     local equip = not (data and data.equip == false)
@@ -6293,12 +6781,70 @@ RegisterNUICallback('dropInventoryItem', function(data, cb)
 end)
 
 RegisterNUICallback('callRoleVehicle', function(data, cb)
+    if (data and data.role) == "cop" then
+        cb({ success = false, error = "Use the PD garage to spawn police vehicles." })
+        return
+    end
+
     local vehicle = SpawnRequestedRoleVehicle(data and data.role)
     if vehicle and DoesEntityExist(vehicle) then
         cb({ success = true })
     else
         cb({ success = false, error = "Unable to spawn a vehicle nearby." })
     end
+end)
+
+RegisterNUICallback('requestPdGarageMenu', function(data, cb)
+    RequestPdGarageMenu()
+    cb({ success = true })
+end)
+
+RegisterNUICallback('pdGarageSpawnVehicle', function(data, cb)
+    local modelName = tostring(data and data.model or "")
+    if modelName == "" then
+        cb({ success = false, error = "Select a PD vehicle first." })
+        return
+    end
+
+    local requestId = ("pdgarage_%s_%s"):format(GetGameTimer(), math.random(1000, 9999))
+    pendingPdGarageSpawnCallbacks[requestId] = cb
+    TriggerServerEvent('cnr:requestPdGarageVehicleSpawn', modelName, requestId)
+end)
+
+RegisterNUICallback('pdGarageStoreVehicle', function(data, cb)
+    local success, message = StoreCurrentPdGarageVehicle()
+    cb({
+        success = success,
+        error = success and nil or message
+    })
+    ShowNotification((success and "~g~" or "~r~") .. tostring(message))
+end)
+
+RegisterNUICallback('pdGarageRepairVehicle', function(data, cb)
+    local success, message = RepairPdGarageVehicle()
+    cb({
+        success = success,
+        error = success and nil or message
+    })
+    ShowNotification((success and "~g~" or "~r~") .. tostring(message))
+end)
+
+RegisterNUICallback('pdGarageRefuelVehicle', function(data, cb)
+    local success, message = RefuelPdGarageVehicle()
+    cb({
+        success = success,
+        error = success and nil or message
+    })
+    ShowNotification((success and "~g~" or "~r~") .. tostring(message))
+end)
+
+RegisterNUICallback('pdGarageDeleteAbandoned', function(data, cb)
+    local success, message = DeleteAbandonedPdGarageVehicle()
+    cb({
+        success = success,
+        error = success and nil or message
+    })
+    ShowNotification((success and "~g~" or "~r~") .. tostring(message))
 end)
 
 RegisterNUICallback('requestPoliceAssistance', function(data, cb)

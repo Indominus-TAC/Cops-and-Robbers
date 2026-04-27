@@ -52,7 +52,28 @@ Config.BankVaults = {
 -- Police and Civilian Vehicles
 -- =========================
 -- Lists of vehicle models used for various game mode mechanics.
-Config.PoliceVehicles   = { "police", "police2", "police3", "fbi", "fbi2", "policet", "sheriff", "sheriff2" }
+Config.PoliceVehicles   = {
+    "police",
+    "police2",
+    "police3",
+    "police4",
+    "police5",
+    "sheriff",
+    "sheriff2",
+    "polbuffalo",
+    "polbuffalo6",
+    "polgauntlet",
+    "policeb",
+    "policeb2",
+    "polmav",
+    "policet",
+    "pbus",
+    "riot",
+    "riot2",
+    "pranger",
+    "fbi",
+    "fbi2"
+}
 Config.CivilianVehicles = { "sultan", "futo", "blista", "banshee", "elegy2", "stratum", "issi2", "prairie" }
 
 
@@ -720,9 +741,112 @@ Config.HeistTimers = {
 -- =========================
 -- Locations where roles can spawn their vehicles.
 Config.PoliceVehicleSpawns = {
-    { location = vector3(450.0, -994.0, 25.7), heading = 270.0 }, -- Mission Row PD Garage side
-    { location = vector3(465.0, -1016.0, 28.0), heading = 0.0 },   -- Mission Row PD Backlot
+    { location = vector4(445.93, -1025.24, 28.63, 2.84), heading = 2.84 }, -- Mission Row PD backlot outer bay
+    { location = vector4(442.41, -1025.18, 28.70, 2.84), heading = 2.84 }, -- Mission Row PD backlot middle bay
+    { location = vector4(438.96, -1025.20, 28.77, 2.84), heading = 2.84 }, -- Mission Row PD backlot rear bay
     -- Add more spawn points as needed
+}
+
+Config.PDGarage = {
+    enabled = true,
+    allowAdminAccess = true,
+    interaction = {
+        location = vector3(451.17, -1018.12, 28.48),
+        radius = 3.0,
+        drawDistance = 35.0,
+        helpText = "Press ~INPUT_CONTEXT~ to access the PD garage"
+    },
+    returnRadius = 30.0,
+    abandonedDeleteRadius = 45.0,
+    spawnClearRadius = 4.0,
+    spawnCooldownSeconds = 15,
+    maxActiveVehicles = 2,
+    disableStaticPoliceSpawns = true,
+    spawnPoints = {
+        { location = vector4(445.93, -1025.24, 28.63, 2.84), label = "Backlot Bay 1" },
+        { location = vector4(442.41, -1025.18, 28.70, 2.84), label = "Backlot Bay 2" },
+        { location = vector4(438.96, -1025.20, 28.77, 2.84), label = "Backlot Bay 3" },
+        { location = vector4(435.53, -1025.11, 28.84, 2.84), label = "Backlot Bay 4" }
+    },
+    vehicleCategories = {
+        {
+            id = "patrol",
+            name = "Patrol Vehicles",
+            accessLabel = "Recruit / Officer",
+            minLevel = 1,
+            vehicles = {
+                { model = "police", label = "Vapid Police Cruiser", description = "Standard marked sedan for city patrol." },
+                { model = "police2", label = "Bravado Buffalo Patrol", description = "Fast-response marked interceptor." },
+                { model = "police3", label = "Vapid Stanier Patrol", description = "Reliable marked patrol unit." },
+                { model = "police4", label = "Police Interceptor Mk IV", description = "Marked pursuit interceptor." },
+                { model = "police5", label = "Police Cruiser Mk V", description = "Updated marked patrol platform." },
+                { model = "sheriff", label = "Sheriff Cruiser", description = "County-marked cruiser for general patrol." },
+                { model = "sheriff2", label = "Sheriff SUV", description = "County SUV for patrol coverage." },
+                { model = "pranger", label = "Park Ranger Unit", description = "Utility SUV for rural and perimeter patrols." }
+            }
+        },
+        {
+            id = "interceptors",
+            name = "Interceptor Fleet",
+            accessLabel = "Officer+",
+            minLevel = 2,
+            vehicles = {
+                { model = "polbuffalo", label = "Police Buffalo", description = "Marked muscle interceptor for rapid response." },
+                { model = "polgauntlet", label = "Police Gauntlet", description = "High-speed marked pursuit car." }
+            }
+        },
+        {
+            id = "motor",
+            name = "Motor Units",
+            accessLabel = "Traffic / Motor",
+            minLevel = 3,
+            vehicles = {
+                { model = "policeb", label = "Police Bike", description = "Quick mobility bike for traffic and rapid response." },
+                { model = "policeb2", label = "Police Bike Mk II", description = "Upgraded motor unit for traffic and escort work." }
+            }
+        },
+        {
+            id = "command",
+            name = "Command / Unmarked",
+            accessLabel = "Sergeant+",
+            minLevel = 6,
+            vehicles = {
+                { model = "fbi", label = "Unmarked Buffalo", description = "Low-visibility sedan for investigations." },
+                { model = "fbi2", label = "Unmarked Granger", description = "Command SUV for tactical plainclothes work." },
+                { model = "polbuffalo6", label = "Police Buffalo STX", description = "Advanced command interceptor for high-risk pursuits." }
+            }
+        },
+        {
+            id = "specialty",
+            name = "Specialty Vehicles",
+            accessLabel = "Command / Tactical",
+            minLevel = 10,
+            spawnClearRadius = 6.0,
+            vehicles = {
+                { model = "policet", label = "Police Transport", description = "Transport van for multi-suspect arrests." },
+                { model = "pbus", label = "Police Bus", description = "Mass-transport prisoner and tactical support bus." },
+                { model = "riot", label = "Riot Control Van", description = "Heavy-response vehicle for high-risk scenes." },
+                { model = "riot2", label = "Riot Control Van Mk II", description = "Expanded tactical response and crowd-control platform." }
+            }
+        },
+        {
+            id = "aviation",
+            name = "Air Support",
+            accessLabel = "Air Unit",
+            minLevel = 18,
+            vehicles = {
+                {
+                    model = "polmav",
+                    label = "Police Maverick",
+                    description = "Helicopter for pursuit overwatch and air support.",
+                    spawnClearRadius = 12.0,
+                    spawnPoints = {
+                        { location = vector4(449.28, -981.18, 43.69, 90.0), label = "MRPD Helipad" }
+                    }
+                }
+            }
+        }
+    }
 }
 
 Config.RobberVehicleSpawns = { -- Vehicles spawned for robbers near their spawn point

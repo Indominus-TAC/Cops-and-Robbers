@@ -46,6 +46,7 @@ local droppedWorldItems = {}
 local nextDroppedWorldItemId = 1
 local activeCadCalls = _G.activeCadCalls or {}
 local nextCadCallId = _G.nextCadCallId or 1
+local pdGaragePlayerState = _G.pdGaragePlayerState or {}
 
 _G.playersData = playersData
 _G.copsOnDuty = copsOnDuty
@@ -60,6 +61,7 @@ _G.activeBounties = activeBounties
 _G.playerDeployedSpikeStripsCount = playerDeployedSpikeStripsCount
 _G.activeCadCalls = activeCadCalls
 _G.nextCadCallId = nextCadCallId
+_G.pdGaragePlayerState = pdGaragePlayerState
 
 -- ====================================================================
 -- Get Player Role Handler
@@ -574,6 +576,144 @@ end
 
 local IsAdmin = IsPlayerAdmin
 
+local function GetPdGarageConfig()
+    if Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled then
+        return Config.PDGarage
+    end
+
+    return nil
+end
+
+local function GetPdGaragePlayerState(playerId)
+    local src = tonumber(playerId)
+    if not src or src <= 0 then
+        return nil
+    end
+
+    local state = pdGaragePlayerState[src]
+    if not state then
+        state = {
+            lastSpawnAt = 0,
+            activeVehicles = {}
+        }
+        pdGaragePlayerState[src] = state
+    end
+
+    state.activeVehicles = state.activeVehicles or {}
+    state.lastSpawnAt = tonumber(state.lastSpawnAt) or 0
+    return state
+end
+
+local function ResetPdGaragePlayerState(playerId)
+    local src = tonumber(playerId)
+    if src and src > 0 then
+        pdGaragePlayerState[src] = nil
+    end
+end
+
+local function CountPdGarageActiveVehicles(playerId)
+    local state = GetPdGaragePlayerState(playerId)
+    if not state or type(state.activeVehicles) ~= "table" then
+        return 0
+    end
+
+    local count = 0
+    for _, _ in pairs(state.activeVehicles) do
+        count = count + 1
+    end
+
+    return count
+end
+
+local function IsPlayerNearPdGarage(playerId, extraRadius)
+    local garage = GetPdGarageConfig()
+    if not garage or not garage.interaction or not garage.interaction.location then
+        return false
+    end
+
+    local src = tonumber(playerId)
+    if not src or src <= 0 then
+        return false
+    end
+
+    local playerPed = GetPlayerPed(tostring(src))
+    if not playerPed or playerPed == 0 then
+        return false
+    end
+
+    local playerCoords = GetEntityCoords(playerPed)
+    if not playerCoords then
+        return false
+    end
+
+    local allowedDistance = (tonumber(garage.interaction.radius) or 3.0) + (tonumber(extraRadius) or 0.0)
+    return #(playerCoords - garage.interaction.location) <= allowedDistance
+end
+
+local function GetPdGarageAccessProfile(playerId, pData)
+    local garage = GetPdGarageConfig()
+    if not garage then
+        return false, "The PD garage is currently unavailable."
+    end
+
+    local src = tonumber(playerId)
+    if not src or src <= 0 then
+        return false, "Invalid player."
+    end
+
+    local playerData = pData or GetCnrPlayerData(src)
+    if not playerData then
+        return false, "Player data is not ready yet."
+    end
+
+    local isAdmin = garage.allowAdminAccess == true and IsPlayerAdmin(src)
+    if playerData.role ~= "cop" and not isAdmin then
+        return false, "Only active police officers can use the PD garage."
+    end
+
+    return true, {
+        isAdmin = isAdmin,
+        level = tonumber(playerData.level) or 1,
+        role = playerData.role
+    }
+end
+
+local function BuildPdGarageVehicleList(accessProfile)
+    local garage = GetPdGarageConfig()
+    local allowedVehicles = {}
+    local vehicleLookup = {}
+
+    if not garage or type(garage.vehicleCategories) ~= "table" then
+        return allowedVehicles, vehicleLookup
+    end
+
+    for _, category in ipairs(garage.vehicleCategories) do
+        local requiredLevel = tonumber(category.minLevel) or 1
+        if accessProfile.isAdmin or accessProfile.level >= requiredLevel then
+            for _, vehicle in ipairs(category.vehicles or {}) do
+                local model = string.lower(tostring(vehicle.model or ""))
+                if model ~= "" and not vehicleLookup[model] then
+                    local entry = {
+                        model = model,
+                        label = vehicle.label or model,
+                        description = vehicle.description or (category.name or "PD vehicle"),
+                        category = category.name or "PD Vehicles",
+                        accessLabel = category.accessLabel or "Authorized",
+                        requiredLevel = requiredLevel,
+                        spawnPoints = vehicle.spawnPoints or category.spawnPoints,
+                        spawnClearRadius = tonumber(vehicle.spawnClearRadius) or tonumber(category.spawnClearRadius) or nil
+                    }
+
+                    allowedVehicles[#allowedVehicles + 1] = entry
+                    vehicleLookup[model] = entry
+                end
+            end
+        end
+    end
+
+    return allowedVehicles, vehicleLookup
+end
+
 local function GetPlayerRole(playerId)
     local pData = GetCnrPlayerData(playerId)
     if pData then return pData.role end
@@ -986,6 +1126,11 @@ SetPlayerRole = function(playerId, role, skipNotify)
 
     if previousRole ~= role and SavePlayerDataImmediate then
         SavePlayerDataImmediate(pIdNum, "role_change")
+    end
+
+    if role ~= "cop" then
+        ResetPdGaragePlayerState(pIdNum)
+        TriggerClientEvent('cnr:cleanupPdGarageVehicles', pIdNum)
     end
 end
 
@@ -2579,6 +2724,8 @@ AddEventHandler('playerDropped', function(reason)
         end
     end
 
+    ResetPdGaragePlayerState(src)
+
     -- Use enhanced memory management system
     if MemoryManager then
         MemoryManager.QueuePlayerCleanup(src, reason)
@@ -3340,6 +3487,163 @@ AddEventHandler('cnr:openRoleActionMenu', SecurityEnhancements.SecureEventHandle
     else
         SafeTriggerClientEvent('cnr:showNotification', src, "~r~No role action menu is available for your current role.")
     end
+end))
+
+RegisterServerEvent('cnr:requestPdGarageMenu')
+RegisterNetEvent('cnr:requestPdGarageMenu')
+AddEventHandler('cnr:requestPdGarageMenu', SecurityEnhancements.SecureEventHandler('cnr:requestPdGarageMenu', function(playerId)
+    local src = tonumber(source) or tonumber(playerId)
+    if not src or src <= 0 then
+        return
+    end
+
+    local pData = GetCnrPlayerData(src)
+    local allowed, accessProfileOrMessage = GetPdGarageAccessProfile(src, pData)
+    if not allowed then
+        TriggerClientEvent('cnr:showNotification', src, accessProfileOrMessage, 'error')
+        return
+    end
+
+    if not IsPlayerNearPdGarage(src, 0.75) then
+        TriggerClientEvent('cnr:showNotification', src, 'You must be at the PD garage to use it.', 'error')
+        return
+    end
+
+    local accessProfile = accessProfileOrMessage
+    local garage = GetPdGarageConfig()
+    local vehicles = BuildPdGarageVehicleList(accessProfile)
+
+    TriggerClientEvent('cnr:showPdGarageMenu', src, {
+        title = 'Mission Row PD Garage',
+        subtitle = 'Authorized police vehicles, recovery, repair, and cleanup tools.',
+        vehicles = vehicles,
+        activeVehicleCount = CountPdGarageActiveVehicles(src),
+        maxActiveVehicles = tonumber(garage.maxActiveVehicles) or 2,
+        supportActions = {
+            store = true,
+            repair = true,
+            refuel = true,
+            deleteAbandoned = true
+        }
+    })
+end))
+
+RegisterServerEvent('cnr:requestPdGarageVehicleSpawn')
+RegisterNetEvent('cnr:requestPdGarageVehicleSpawn')
+AddEventHandler('cnr:requestPdGarageVehicleSpawn', SecurityEnhancements.SecureEventHandler('cnr:requestPdGarageVehicleSpawn', function(modelName, requestId)
+    local src = tonumber(source)
+    if not src or src <= 0 then
+        return
+    end
+
+    local normalizedModel = string.lower(tostring(modelName or ""))
+    local pData = GetCnrPlayerData(src)
+    local allowed, accessProfileOrMessage = GetPdGarageAccessProfile(src, pData)
+
+    if not allowed then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = accessProfileOrMessage
+        })
+        return
+    end
+
+    if normalizedModel == "" then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = 'Select a valid police vehicle.'
+        })
+        return
+    end
+
+    if not IsPlayerNearPdGarage(src, 1.5) then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = 'You must be at the PD garage to spawn a vehicle.'
+        })
+        return
+    end
+
+    local accessProfile = accessProfileOrMessage
+    local garage = GetPdGarageConfig()
+    local state = GetPdGaragePlayerState(src)
+    local _, vehicleLookup = BuildPdGarageVehicleList(accessProfile)
+    local selectedVehicle = vehicleLookup[normalizedModel]
+
+    if not selectedVehicle then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = 'You are not authorized to spawn that PD vehicle.'
+        })
+        return
+    end
+
+    local maxActiveVehicles = tonumber(garage.maxActiveVehicles) or 2
+    if CountPdGarageActiveVehicles(src) >= maxActiveVehicles then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = string.format('Return or delete a PD vehicle before spawning more than %d.', maxActiveVehicles)
+        })
+        return
+    end
+
+    local cooldownSeconds = tonumber(garage.spawnCooldownSeconds) or 0
+    local now = os.time()
+    if cooldownSeconds > 0 and state.lastSpawnAt > 0 and (now - state.lastSpawnAt) < cooldownSeconds then
+        TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+            success = false,
+            error = string.format('PD garage cooldown active. Try again in %d seconds.', math.max(1, cooldownSeconds - (now - state.lastSpawnAt)))
+        })
+        return
+    end
+
+    state.lastSpawnAt = now
+
+    TriggerClientEvent('cnr:pdGarageSpawnApproved', src, requestId, {
+        success = true,
+        vehicle = selectedVehicle,
+        spawnPoints = selectedVehicle.spawnPoints or garage.spawnPoints or {},
+        spawnClearRadius = tonumber(selectedVehicle.spawnClearRadius) or tonumber(garage.spawnClearRadius) or 4.0,
+        activeVehicleCount = CountPdGarageActiveVehicles(src),
+        maxActiveVehicles = maxActiveVehicles
+    })
+end))
+
+RegisterServerEvent('cnr:registerPdGarageVehicle')
+RegisterNetEvent('cnr:registerPdGarageVehicle')
+AddEventHandler('cnr:registerPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:registerPdGarageVehicle', function(networkId, modelName)
+    local src = tonumber(source)
+    local netId = tonumber(networkId)
+    if not src or src <= 0 or not netId or netId <= 0 then
+        return
+    end
+
+    local state = GetPdGaragePlayerState(src)
+    if not state then
+        return
+    end
+
+    state.activeVehicles[tostring(netId)] = {
+        model = string.lower(tostring(modelName or "unknown")),
+        spawnedAt = os.time()
+    }
+end))
+
+RegisterServerEvent('cnr:unregisterPdGarageVehicle')
+RegisterNetEvent('cnr:unregisterPdGarageVehicle')
+AddEventHandler('cnr:unregisterPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:unregisterPdGarageVehicle', function(networkId)
+    local src = tonumber(source)
+    local netId = tonumber(networkId)
+    if not src or src <= 0 or not netId or netId <= 0 then
+        return
+    end
+
+    local state = GetPdGaragePlayerState(src)
+    if not state or type(state.activeVehicles) ~= "table" then
+        return
+    end
+
+    state.activeVehicles[tostring(netId)] = nil
 end))
 
 -- Handle role selection request
