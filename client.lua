@@ -1046,8 +1046,19 @@ local function IsFemaleCharacterModel(modelName)
     return modelName == "mp_f_freemode_01" or modelName == GetHashKey("mp_f_freemode_01")
 end
 
+local function NormalizeCharacterEditorRole(roleName)
+    if roleName == "civilian" then
+        return "citizen"
+    end
+
+    return roleName
+end
+
 local function GetUniformPresetsForRoleAndModel(roleName, modelName)
-    local rolePresets = Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[roleName]
+    local normalizedRoleName = NormalizeCharacterEditorRole(roleName)
+    local rolePresets = Config.CharacterEditor and Config.CharacterEditor.uniformPresets and (
+        Config.CharacterEditor.uniformPresets[normalizedRoleName] or Config.CharacterEditor.uniformPresets[roleName]
+    )
     if type(rolePresets) ~= "table" then
         return {}
     end

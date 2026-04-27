@@ -1134,6 +1134,150 @@ Config.CharacterEditor = {
                     }
                 }
             }
+        },
+        citizen = {
+            male = {
+                {
+                    name = "City Casual",
+                    description = "Clean everyday civilian outfit for male freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 24, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 10, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 28, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 4, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Weekend Wear",
+                    description = "Relaxed civilian outfit for male freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 5, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 1, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 4, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 18, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Business Ready",
+                    description = "Sharper civilian outfit for male freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 24, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 10, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 31, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 32, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                }
+            },
+            female = {
+                {
+                    name = "City Casual",
+                    description = "Clean everyday civilian outfit for female freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 12, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 6, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 2, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 8, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Weekend Wear",
+                    description = "Relaxed civilian outfit for female freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 5, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 3, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 14, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 14, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Business Ready",
+                    description = "Sharper civilian outfit for female freemode characters",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 14, texture = 0 },
+                        [4] = { drawable = 10, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 21, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 14, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 27, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                }
+            }
         }
     },
     

@@ -520,7 +520,7 @@
                     <button class="tab-button" data-tab="features">Features</button>
                     <button class="tab-button" data-tab="appearance">Appearance</button>
                     <button class="tab-button" data-tab="clothing">Clothing</button>
-                    <button class="tab-button" data-tab="uniforms">Uniforms</button>
+                    <button class="tab-button" data-tab="uniforms">Outfits</button>
                     <button class="tab-button" data-tab="characters">Characters</button>
                 </div>
 
@@ -872,16 +872,17 @@
                         </div>
                     </div>
 
-                    <!-- Uniforms Tab -->
+                    <!-- Outfits Tab -->
                     <div id="uniforms-tab" class="tab-panel">
                         <div class="customization-section">
-                            <h3>Role-Specific Uniform Presets</h3>
+                            <h3>Role-Based Outfit Presets</h3>
+                            <p class="info-text">Choose a preconfigured look tailored to the role you are editing. Every preset can be previewed before you commit it.</p>
                             <div id="uniform-presets-container" class="uniform-presets">
                                 <!-- Uniform presets will be populated by JavaScript -->
                             </div>
                             <div class="uniform-actions">
-                                <button id="preview-uniform-btn" class="action-btn secondary" disabled>Preview</button>
-                                <button id="apply-uniform-btn" class="action-btn primary" disabled>Apply</button>
+                                <button id="preview-uniform-btn" class="action-btn secondary" disabled>Preview Outfit</button>
+                                <button id="apply-uniform-btn" class="action-btn primary" disabled>Apply Outfit</button>
                                 <button id="cancel-preview-btn" class="action-btn secondary" disabled>Cancel Preview</button>
                             </div>
                         </div>
@@ -899,6 +900,7 @@
                                 <button id="delete-character-btn" class="action-btn danger" disabled>Delete Character</button>
                                 <button id="create-new-btn" class="action-btn primary">Create New</button>
                             </div>
+                            <p class="info-text">Deleting and resetting now use a second click on the same button to confirm, so the editor stays responsive.</p>
                         </div>
                     </div>
                 </div>

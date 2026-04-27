@@ -4488,6 +4488,7 @@ class EnhancedCharacterEditor {
         this.characterSlots = {};
         this.selectedUniformPreset = null;
         this.selectedCharacterSlot = null;
+        this.confirmationTimeouts = {};
         this.resourceName = CNRConfig.getResourceName();
         this.editorElement = document.getElementById('character-editor-container');
         this.clothingComponentDefinitions = [
@@ -4519,6 +4520,27 @@ class EnhancedCharacterEditor {
         this.setupSliderHandlers();
         this.enhanceSliderControls();
         console.log('[CNR_CHARACTER_EDITOR] Enhanced Character Editor initialized');
+    }
+
+    getRolePresetKey(roleName) {
+        if (roleName === 'civilian') {
+            return 'citizen';
+        }
+
+        return roleName || 'citizen';
+    }
+
+    getRoleDisplayLabel(roleName) {
+        const normalizedRole = this.getRolePresetKey(roleName);
+        if (normalizedRole === 'cop') {
+            return 'Cop';
+        }
+
+        if (normalizedRole === 'robber') {
+            return 'Robber';
+        }
+
+        return 'Civilian';
     }
 
     setupEventListeners() {
@@ -4838,6 +4860,8 @@ class EnhancedCharacterEditor {
     }
 
     switchTab(tabName) {
+        this.clearAllActionConfirmations();
+
         // Update active tab button
         this.editorElement?.querySelectorAll('.tab-button').forEach(btn => {
             btn.classList.remove('active');
@@ -4970,14 +4994,19 @@ class EnhancedCharacterEditor {
         }
 
         this.uniformPresets.forEach((preset, index) => {
-            const presetElement = document.createElement('div');
+            const presetElement = document.createElement('button');
+            presetElement.type = 'button';
             presetElement.className = 'uniform-preset';
+            const roleLabel = this.getRoleDisplayLabel(this.currentRole);
             presetElement.innerHTML = `
+                <span class="preset-role-tag">${roleLabel} Outfit</span>
                 <h4>${preset.name}</h4>
                 <p>${preset.description}</p>
+                <span class="preset-select-label">Select Outfit</span>
             `;
 
             presetElement.addEventListener('click', () => {
+                this.clearAllActionConfirmations();
                 this.selectUniformPreset(index);
             });
 
@@ -4986,6 +5015,8 @@ class EnhancedCharacterEditor {
     }
 
     selectUniformPreset(index) {
+        this.clearAllActionConfirmations();
+
         // Remove previous selection
         this.editorElement?.querySelectorAll('.uniform-preset').forEach(preset => {
             preset.classList.remove('selected');
@@ -5062,6 +5093,7 @@ class EnhancedCharacterEditor {
         
         container.innerHTML = '';
         this.selectedCharacterSlot = null;
+        this.clearAllActionConfirmations();
 
         const loadBtn = document.getElementById('load-character-btn');
         const deleteBtn = document.getElementById('delete-character-btn');
@@ -5092,6 +5124,8 @@ class EnhancedCharacterEditor {
     }
 
     selectCharacterSlot(slotKey, element) {
+        this.clearAllActionConfirmations();
+
         // Remove previous selection
         this.editorElement?.querySelectorAll('.character-slot').forEach(slot => {
             slot.classList.remove('selected');
@@ -5110,6 +5144,7 @@ class EnhancedCharacterEditor {
 
     loadCharacter() {
         if (!this.selectedCharacterSlot) return;
+        this.clearAllActionConfirmations();
 
         this.sendNUIMessage('characterEditor_loadCharacter', {
             characterKey: this.selectedCharacterSlot
@@ -5123,39 +5158,47 @@ class EnhancedCharacterEditor {
     deleteCharacter() {
         if (!this.selectedCharacterSlot) return;
 
-        if (confirm('Are you sure you want to delete this character? This action cannot be undone.')) {
-            this.sendNUIMessage('characterEditor_deleteCharacter', {
-                characterKey: this.selectedCharacterSlot
-            }).then((result) => {
-                if (!result || !result.success) {
-                    return;
-                }
-
-                delete this.characterSlots[this.selectedCharacterSlot];
-                this.populateCharacterSlots();
-            });
+        if (!this.requestActionConfirmation('delete-character-btn', 'Click Again to Delete', 'Delete Character')) {
+            return;
         }
+
+        const characterKeyToDelete = this.selectedCharacterSlot;
+        this.sendNUIMessage('characterEditor_deleteCharacter', {
+            characterKey: characterKeyToDelete
+        }).then((result) => {
+            if (!result || !result.success) {
+                return;
+            }
+
+            delete this.characterSlots[characterKeyToDelete];
+            this.populateCharacterSlots();
+        });
     }
 
     createNewCharacter() {
+        this.clearAllActionConfirmations();
         this.resetCharacter();
     }
 
     saveCharacter() {
+        this.clearAllActionConfirmations();
         this.sendNUIMessage('characterEditor_save', {});
     }
 
     resetCharacter() {
-        if (confirm('Are you sure you want to reset the character to default? All current changes will be lost.')) {
-            this.sendNUIMessage('characterEditor_reset', {}).then((result) => {
-                if (!result || !result.success) {
-                    console.error('[CNR_CHARACTER_EDITOR] Failed to reset character:', result?.error || 'Unknown error');
-                }
-            });
+        if (!this.requestActionConfirmation('reset-character-btn', 'Click Again to Reset', 'Reset to Default')) {
+            return;
         }
+
+        this.sendNUIMessage('characterEditor_reset', {}).then((result) => {
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to reset character:', result?.error || 'Unknown error');
+            }
+        });
     }
 
     closeEditor(save = false, notifyClient = true) {
+        this.clearAllActionConfirmations();
         this.isOpen = false;
         const container = document.getElementById('character-editor-container');
         if (container) {
@@ -5178,6 +5221,7 @@ class EnhancedCharacterEditor {
         this.characterSlots = data.playerCharacters || {};
         this.selectedUniformPreset = null;
         this.selectedCharacterSlot = null;
+        this.clearAllActionConfirmations();
 
         document.body.style.display = 'block';
         document.body.style.visibility = 'visible';
@@ -5185,7 +5229,7 @@ class EnhancedCharacterEditor {
         // Update UI
         const roleElement = document.getElementById('current-role');
         const slotElement = document.getElementById('current-slot');
-        if (roleElement) roleElement.textContent = this.currentRole.charAt(0).toUpperCase() + this.currentRole.slice(1);
+        if (roleElement) roleElement.textContent = this.getRoleDisplayLabel(this.currentRole);
         if (slotElement) slotElement.textContent = `Slot ${this.currentSlot}`;
 
         // Populate uniform presets and character slots
@@ -5287,6 +5331,61 @@ class EnhancedCharacterEditor {
     syncCharacterData(characterData) {
         this.characterData = characterData || {};
         this.updateSlidersFromCharacterData();
+    }
+
+    requestActionConfirmation(buttonId, armedLabel, defaultLabel) {
+        const targetButton = document.getElementById(buttonId);
+        if (!targetButton) {
+            return true;
+        }
+
+        const isArmed = targetButton.dataset.confirmArmed === 'true';
+        if (isArmed) {
+            this.clearActionConfirmation(buttonId, defaultLabel);
+            return true;
+        }
+
+        this.clearAllActionConfirmations(buttonId);
+        targetButton.dataset.confirmArmed = 'true';
+        targetButton.classList.add('confirming');
+        targetButton.textContent = armedLabel;
+
+        this.confirmationTimeouts[buttonId] = window.setTimeout(() => {
+            this.clearActionConfirmation(buttonId, defaultLabel);
+        }, 3500);
+
+        return false;
+    }
+
+    clearActionConfirmation(buttonId, defaultLabel) {
+        const targetButton = document.getElementById(buttonId);
+        if (!targetButton) {
+            return;
+        }
+
+        if (this.confirmationTimeouts[buttonId]) {
+            window.clearTimeout(this.confirmationTimeouts[buttonId]);
+            delete this.confirmationTimeouts[buttonId];
+        }
+
+        targetButton.dataset.confirmArmed = 'false';
+        targetButton.classList.remove('confirming');
+        targetButton.textContent = defaultLabel;
+    }
+
+    clearAllActionConfirmations(excludedButtonId = null) {
+        const confirmationButtons = [
+            { id: 'delete-character-btn', label: 'Delete Character' },
+            { id: 'reset-character-btn', label: 'Reset to Default' }
+        ];
+
+        confirmationButtons.forEach((entry) => {
+            if (entry.id === excludedButtonId) {
+                return;
+            }
+
+            this.clearActionConfirmation(entry.id, entry.label);
+        });
     }
 
     sendNUIMessage(action, data) {

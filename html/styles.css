@@ -4147,6 +4147,78 @@ body::before {
     text-align: center;
 }
 
+.character-editor-container .uniform-presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.character-editor-container .uniform-preset {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.character-editor-container .uniform-preset:hover {
+    transform: translateY(-2px);
+    border-color: rgba(125, 219, 131, 0.35);
+    background: rgba(76, 175, 80, 0.08);
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+}
+
+.character-editor-container .uniform-preset.selected {
+    border-color: rgba(125, 219, 131, 0.5);
+    background: rgba(76, 175, 80, 0.16);
+    box-shadow: 0 16px 32px rgba(76, 175, 80, 0.16);
+}
+
+.character-editor-container .uniform-preset h4 {
+    margin: 0;
+    color: #f8fff8;
+    font-size: 1.02rem;
+}
+
+.character-editor-container .uniform-preset p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.72);
+    line-height: 1.45;
+}
+
+.character-editor-container .preset-role-tag,
+.character-editor-container .preset-select-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.character-editor-container .preset-role-tag {
+    background: rgba(255, 255, 255, 0.08);
+    color: #c8f4cc;
+}
+
+.character-editor-container .preset-select-label {
+    margin-top: auto;
+    background: rgba(76, 175, 80, 0.18);
+    color: #9fe2a2;
+}
+
 .character-editor-container .info-text {
     margin: 0 0 16px;
     color: rgba(255, 255, 255, 0.72);
@@ -4169,6 +4241,13 @@ body::before {
 
 .action-btn.large {
     min-width: 180px;
+}
+
+.character-editor-container .action-btn.confirming {
+    background: rgba(244, 67, 54, 0.2);
+    border-color: rgba(244, 67, 54, 0.55);
+    color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.18);
 }
 
 @media (max-width: 1100px) {
