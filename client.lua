@@ -3226,6 +3226,64 @@ function SpawnPoliceVehicles()
     end
 end
 
+local function CleanupLegacyPoliceVehiclesNearPdGarage()
+    local garage = GetPdGarageConfig()
+    if not garage or type(GetGamePool) ~= "function" then
+        return
+    end
+
+    local configuredPoliceVehicles = Config and Config.PoliceVehicles or {}
+    if type(configuredPoliceVehicles) ~= "table" or #configuredPoliceVehicles == 0 then
+        return
+    end
+
+    local policeModelHashes = {}
+    for _, modelName in ipairs(configuredPoliceVehicles) do
+        if type(modelName) == "string" and modelName ~= "" then
+            policeModelHashes[GetHashKey(modelName)] = true
+        end
+    end
+
+    local bayRadius = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.55, 2.25)
+    local bayRadiusSq = bayRadius * bayRadius
+    local verticalTolerance = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.5, 2.5)
+
+    for _, vehicle in ipairs(GetGamePool('CVehicle') or {}) do
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) and policeModelHashes[GetEntityModel(vehicle)] then
+            local driver = GetPedInVehicleSeat(vehicle, -1)
+            local hasPlayerOccupant = false
+            local maxPassengers = GetVehicleMaxNumberOfPassengers(vehicle)
+            if driver and driver ~= 0 and IsPedAPlayer(driver) then
+                hasPlayerOccupant = true
+            else
+                for seat = 0, maxPassengers do
+                    local occupant = GetPedInVehicleSeat(vehicle, seat)
+                    if occupant and occupant ~= 0 and IsPedAPlayer(occupant) then
+                        hasPlayerOccupant = true
+                        break
+                    end
+                end
+            end
+
+            if not hasPlayerOccupant then
+                local vehicleCoords = GetEntityCoords(vehicle)
+                for _, spawnPoint in ipairs(garage.spawnPoints or {}) do
+                    local spawnCoords = GetEntryCoords(spawnPoint)
+                    if spawnCoords and math.abs(vehicleCoords.z - spawnCoords.z) <= verticalTolerance then
+                        local dx = vehicleCoords.x - spawnCoords.x
+                        local dy = vehicleCoords.y - spawnCoords.y
+                        if ((dx * dx) + (dy * dy)) <= bayRadiusSq then
+                            SetEntityAsMissionEntity(vehicle, true, true)
+                            DeleteVehicle(vehicle)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Call this on resource start and when player spawns
 Citizen.CreateThread(function()
     Citizen.Wait(2000)
@@ -3234,6 +3292,7 @@ Citizen.CreateThread(function()
     SpawnPublicStorePeds()
     SpawnRobberVehicles() -- Added vehicle spawning for robbers
     SpawnPoliceVehicles()
+    CleanupLegacyPoliceVehiclesNearPdGarage()
     UpdatePublicStoreBlips()
     -- Initial blip setup based on current role
     if role == "cop" then
