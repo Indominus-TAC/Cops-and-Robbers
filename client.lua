@@ -442,6 +442,7 @@ local playerCharacters = {}
 local previewingUniform = false
 local currentUniformPreset = nil
 local currentEditorCameraMode = "full"
+local isRoleSelectionVisible = false
 
 -- Character editor UI state
 local editorUI = {
@@ -1038,6 +1039,9 @@ end
 local function SetMenuFocus(hasFocus, hasCursor)
     SetNuiFocus(hasFocus, hasCursor)
     SetNuiFocusKeepInput(false)
+    if hasFocus and hasCursor then
+        SetCursorLocation(0.5, 0.5)
+    end
 end
 
 -- Open character editor
@@ -1102,6 +1106,7 @@ function OpenCharacterEditor(role, characterSlot)
     SetEntityInvincible(ped, true)
     
     isInCharacterEditor = true
+    isRoleSelectionVisible = false
     currentEditorCameraMode = "full"
     DestroyCharacterEditorCamera()
     UpdateCharacterEditorCamera(currentEditorCameraMode)
@@ -2744,10 +2749,11 @@ AddEventHandler('playerSpawned', function()
 
     -- Only show role selection if player doesn't have a role yet
     if not role or role == "" then
+        isRoleSelectionVisible = true
         SendNUIMessage({ action = 'showRoleSelection', resourceName = GetCurrentResourceName() })
         SetMenuFocus(true, true)
         Citizen.SetTimeout(100, function()
-            if not role or role == "" then
+            if isRoleSelectionVisible and not isInCharacterEditor then
                 SetMenuFocus(true, true)
             end
         end)
@@ -2885,9 +2891,11 @@ end)
 RegisterNetEvent('cnr:roleSelected')
 AddEventHandler('cnr:roleSelected', function(success, message)
     if success then
+        isRoleSelectionVisible = false
         SendNUIMessage({ action = 'hideRoleSelection' })
         SetMenuFocus(false, false)
     else
+        isRoleSelectionVisible = true
         SendNUIMessage({
             action = 'roleSelectionFailed',
             error = message or 'Role selection failed.'
@@ -3006,6 +3014,45 @@ Citizen.CreateThread(function()
         end
 
         Citizen.Wait(isDead and 750 or 250)
+    end
+end)
+
+Citizen.CreateThread(function()
+    local focusRefreshCounter = 0
+
+    while true do
+        if isRoleSelectionVisible or isInCharacterEditor then
+            Citizen.Wait(0)
+
+            DisableControlAction(0, 1, true)
+            DisableControlAction(0, 2, true)
+            DisableControlAction(0, 24, true)
+            DisableControlAction(0, 25, true)
+            DisableControlAction(0, 37, true)
+            DisableControlAction(0, 44, true)
+            DisableControlAction(0, 45, true)
+            DisableControlAction(0, 68, true)
+            DisableControlAction(0, 69, true)
+            DisableControlAction(0, 70, true)
+            DisableControlAction(0, 91, true)
+            DisableControlAction(0, 92, true)
+            DisableControlAction(0, 106, true)
+            DisableControlAction(0, 140, true)
+            DisableControlAction(0, 141, true)
+            DisableControlAction(0, 142, true)
+            DisableControlAction(0, 257, true)
+            DisableControlAction(0, 263, true)
+            DisableControlAction(0, 264, true)
+
+            focusRefreshCounter = focusRefreshCounter + 1
+            if focusRefreshCounter >= 30 then
+                SetMenuFocus(true, true)
+                focusRefreshCounter = 0
+            end
+        else
+            focusRefreshCounter = 0
+            Citizen.Wait(250)
+        end
     end
 end)
 
@@ -3216,6 +3263,7 @@ RegisterNUICallback('selectRole', function(data, cb)
     
     -- Close the UI immediately so the player is not left stuck in the menu while
     -- the server finishes role sync. Failure events will reopen it if needed.
+    isRoleSelectionVisible = false
     SendNUIMessage({ action = 'hideRoleSelection' })
     SetMenuFocus(false, false)
     
@@ -3310,6 +3358,7 @@ end)
 RegisterNetEvent('cnr:showRoleSelection')
 AddEventHandler('cnr:showRoleSelection', function()
     activeRoleActionMenu = nil
+    isRoleSelectionVisible = true
     SendNUIMessage({
         action = 'hideRoleActionMenus'
     })
@@ -3319,7 +3368,9 @@ AddEventHandler('cnr:showRoleSelection', function()
     })
     SetMenuFocus(true, true)
     Citizen.SetTimeout(100, function()
-        SetMenuFocus(true, true)
+        if isRoleSelectionVisible and not isInCharacterEditor then
+            SetMenuFocus(true, true)
+        end
     end)
 end)
 
@@ -4882,6 +4933,7 @@ RegisterNUICallback('openCharacterEditor', function(data, cb)
         return
     end
 
+    isRoleSelectionVisible = false
     OpenCharacterEditor(data.role, tonumber(data.characterSlot) or 1)
     cb({ success = true })
 end)

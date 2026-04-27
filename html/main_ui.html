@@ -480,8 +480,8 @@
 
         <!-- Main Content -->
         <div class="character-editor-main">
-            <!-- Left Panel - Character Preview -->
-            <div class="character-preview-panel">
+            <!-- Left Panel - Character Controls -->
+            <aside class="character-preview-panel">
                 <div class="preview-controls">
                     <div class="camera-controls">
                         <h3>Camera View</h3>
@@ -508,10 +508,12 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </aside>
+
+            <div class="character-preview-stage" aria-hidden="true"></div>
 
             <!-- Right Panel - Customization Options -->
-            <div class="customization-panel">
+            <aside class="customization-panel">
                 <!-- Tab Navigation -->
                 <div class="customization-tabs">
                     <button class="tab-button active" data-tab="heritage">Heritage</button>
@@ -523,7 +525,7 @@
                 </div>
 
                 <!-- Tab Content -->
-                <div class="tab-content">
+                <div class="editor-tab-content">
                     <!-- Heritage Tab -->
                     <div id="heritage-tab" class="tab-panel active">
                         <div class="customization-section">
@@ -900,7 +902,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </aside>
         </div>
 
         <!-- Footer Actions -->
