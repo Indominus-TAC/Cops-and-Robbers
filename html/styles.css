@@ -3029,6 +3029,29 @@ body::before {
     margin: 0 auto;
 }
 
+.pd-garage-menu {
+    width: min(1380px, 96vw);
+}
+
+.pd-garage-menu .role-menu-layout--single .role-menu-main {
+    max-width: none;
+    margin: 0;
+    width: 100%;
+}
+
+.pd-garage-menu .role-card {
+    width: 100%;
+}
+
+.pd-garage-menu #pd-garage-vehicle-list {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    align-items: stretch;
+}
+
+.pd-garage-menu .menu-btn {
+    min-height: 86px;
+}
+
 .role-action-menu .role-menu-main,
 .role-action-menu .role-menu-sidebar {
     display: flex;

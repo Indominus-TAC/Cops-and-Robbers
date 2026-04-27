@@ -3151,7 +3151,7 @@ function showPdGarageMenu(garage = {}) {
     if (!menu) {
         menu = document.createElement('section');
         menu.id = 'pd-garage-menu';
-        menu.className = 'menu role-action-menu role-action-menu--police hidden';
+        menu.className = 'menu role-action-menu role-action-menu--police pd-garage-menu hidden';
         menu.setAttribute('role', 'dialog');
         menu.setAttribute('aria-modal', 'true');
         menu.setAttribute('aria-labelledby', 'pdGarageHeading');

@@ -3530,8 +3530,8 @@ end))
 
 RegisterServerEvent('cnr:requestPdGarageVehicleSpawn')
 RegisterNetEvent('cnr:requestPdGarageVehicleSpawn')
-AddEventHandler('cnr:requestPdGarageVehicleSpawn', SecurityEnhancements.SecureEventHandler('cnr:requestPdGarageVehicleSpawn', function(modelName, requestId)
-    local src = tonumber(source)
+AddEventHandler('cnr:requestPdGarageVehicleSpawn', SecurityEnhancements.SecureEventHandler('cnr:requestPdGarageVehicleSpawn', function(playerId, modelName, requestId)
+    local src = tonumber(playerId) or tonumber(source)
     if not src or src <= 0 then
         return
     end
@@ -3611,8 +3611,8 @@ end))
 
 RegisterServerEvent('cnr:registerPdGarageVehicle')
 RegisterNetEvent('cnr:registerPdGarageVehicle')
-AddEventHandler('cnr:registerPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:registerPdGarageVehicle', function(networkId, modelName)
-    local src = tonumber(source)
+AddEventHandler('cnr:registerPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:registerPdGarageVehicle', function(playerId, networkId, modelName)
+    local src = tonumber(playerId) or tonumber(source)
     local netId = tonumber(networkId)
     if not src or src <= 0 or not netId or netId <= 0 then
         return
@@ -3631,8 +3631,8 @@ end))
 
 RegisterServerEvent('cnr:unregisterPdGarageVehicle')
 RegisterNetEvent('cnr:unregisterPdGarageVehicle')
-AddEventHandler('cnr:unregisterPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:unregisterPdGarageVehicle', function(networkId)
-    local src = tonumber(source)
+AddEventHandler('cnr:unregisterPdGarageVehicle', SecurityEnhancements.SecureEventHandler('cnr:unregisterPdGarageVehicle', function(playerId, networkId)
+    local src = tonumber(playerId) or tonumber(source)
     local netId = tonumber(networkId)
     if not src or src <= 0 or not netId or netId <= 0 then
         return
