@@ -3306,13 +3306,7 @@ AddEventHandler('cnr:checkAdminStatus', SecurityEnhancements.SecureEventHandler(
         return
     end
 
-    if pData.role == "cop" then
-        TriggerClientEvent('cnr:showPoliceMenu', src)
-    elseif pData.role == "robber" then
-        TriggerClientEvent('cnr:showRobberMenu', src)
-    else
-        SafeTriggerClientEvent('cnr:showNotification', src, "~r~No special menu available for your role.")
-    end
+    SafeTriggerClientEvent('cnr:showNotification', src, "~r~Admin access required. Use ~y~F11~r~ for the role menu.")
 end))
 
 RegisterServerEvent('cnr:openRoleActionMenu')

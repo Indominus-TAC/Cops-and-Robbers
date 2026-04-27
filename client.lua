@@ -160,6 +160,26 @@ local deathReportedForCurrentLife = false
 local adminNoClipEnabled = false
 local adminInvisibleEnabled = false
 local adminSpectateTargetServerId = nil
+local adminPanelVisible = false
+local activeRoleActionMenu = nil
+local adminPanelRequestStartedAt = 0
+local ADMIN_PANEL_REQUEST_GUARD_MS = 1500
+
+local function BeginAdminPanelRequest()
+    adminPanelRequestStartedAt = GetGameTimer()
+end
+
+local function ClearAdminPanelRequest()
+    adminPanelRequestStartedAt = 0
+end
+
+local function IsAdminPanelRequestPending()
+    if adminPanelRequestStartedAt <= 0 then
+        return false
+    end
+
+    return (GetGameTimer() - adminPanelRequestStartedAt) < ADMIN_PANEL_REQUEST_GUARD_MS
+end
 
 -- Function to get the items, accessible by other parts of this script
 function GetClientConfigItems()
@@ -1937,6 +1957,11 @@ end)
 -- =====================================
 
 RegisterCommand('+cnr_toggleadminpanel', function()
+    if adminPanelVisible or IsAdminPanelRequestPending() then
+        return
+    end
+
+    BeginAdminPanelRequest()
     TriggerServerEvent('cnr:checkAdminStatus')
 end, false)
 
@@ -1944,6 +1969,10 @@ RegisterCommand('-cnr_toggleadminpanel', function() end, false)
 RegisterKeyMapping('+cnr_toggleadminpanel', 'Open Admin Panel', 'keyboard', Config.Keybinds.toggleAdminPanelKey or 'F12')
 
 RegisterCommand('+cnr_openrolemenu', function()
+    if adminPanelVisible or IsAdminPanelRequestPending() or activeRoleActionMenu then
+        return
+    end
+
     TriggerServerEvent('cnr:openRoleActionMenu')
 end, false)
 
@@ -1963,6 +1992,14 @@ end)
 
 -- Event handlers for admin status check
 AddEventHandler('cnr:showAdminPanel', function(players, liveMapData)
+    ClearAdminPanelRequest()
+    adminPanelVisible = true
+    activeRoleActionMenu = nil
+
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
+
     -- Show admin panel UI
     SendNUIMessage({
         action = 'showAdminPanel',
@@ -1973,6 +2010,17 @@ AddEventHandler('cnr:showAdminPanel', function(players, liveMapData)
 end)
 
 AddEventHandler('cnr:showRobberMenu', function()
+    if adminPanelVisible or IsAdminPanelRequestPending() then
+        return
+    end
+
+    ClearAdminPanelRequest()
+    activeRoleActionMenu = "robber"
+
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
+
     -- Show robber-specific menu
     SendNUIMessage({
         action = 'showRobberMenu'
@@ -1981,6 +2029,17 @@ AddEventHandler('cnr:showRobberMenu', function()
 end)
 
 AddEventHandler('cnr:showPoliceMenu', function()
+    if adminPanelVisible or IsAdminPanelRequestPending() then
+        return
+    end
+
+    ClearAdminPanelRequest()
+    activeRoleActionMenu = "police"
+
+    SendNUIMessage({
+        action = 'hideRoleActionMenus'
+    })
+
     SendNUIMessage({
         action = 'showPoliceMenu'
     })
@@ -5344,8 +5403,14 @@ end)
 
 RegisterNUICallback('setNuiFocus', function(data, cb)
     Log("NUI requested SetNuiFocus: " .. tostring(data.hasFocus) .. ", " .. tostring(data.hasCursor), "info", "CNR_INV_CLIENT")
-    
+
     SetNuiFocus(data.hasFocus or false, data.hasCursor or false)
+
+    if not data.hasFocus then
+        adminPanelVisible = false
+        activeRoleActionMenu = nil
+        ClearAdminPanelRequest()
+    end
     
     cb({
         success = true
@@ -5363,6 +5428,8 @@ RegisterNUICallback('closeInventory', function(data, cb)
 end)
 
 RegisterNUICallback('closeAdminPanel', function(data, cb)
+    adminPanelVisible = false
+    ClearAdminPanelRequest()
     SetNuiFocus(false, false)
     cb({ success = true })
 end)

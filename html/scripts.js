@@ -281,6 +281,9 @@ window.addEventListener('message', function(event) {
         case 'showPoliceMenu':
             showPoliceMenu(data);
             break;
+        case 'hideRoleActionMenus':
+            hideRoleActionMenus();
+            break;
         case 'updatePoliceCadData':
             updatePoliceCadData(data.cadData || {}, data.citationReasons || []);
             break;
@@ -2212,6 +2215,7 @@ function showAdminPanel(playerList, liveMapData = null) {
     const adminPanel = document.getElementById('admin-panel');
     const playerListBody = document.getElementById('admin-player-list-body');
     if (!adminPanel || !playerListBody) return;
+    hideRoleActionMenus();
     playerListBody.innerHTML = '';
     if (playerList && playerList.length > 0) {
         playerList.forEach(player => {
@@ -3027,7 +3031,9 @@ let isRobberMenuOpen = false;
 
 function showRobberMenu() {
     console.log('[CNR_ROBBER_MENU] Opening robber menu');
-    
+
+    hideRoleActionMenus();
+
     // Display the menu
     const robberMenu = document.getElementById('robber-menu');
     if (robberMenu) {
@@ -3047,7 +3053,30 @@ let policeCadRefreshInterval = null;
 let latestPoliceCadData = { officers: [], calls: [], suspects: [] };
 let latestCitationReasons = [];
 
+function hideRoleActionMenus() {
+    const policeMenu = document.getElementById('police-menu');
+    if (policeMenu) {
+        policeMenu.classList.add('hidden');
+    }
+
+    const robberMenu = document.getElementById('robber-menu');
+    if (robberMenu) {
+        robberMenu.classList.add('hidden');
+    }
+
+    if (policeCadRefreshInterval) {
+        clearInterval(policeCadRefreshInterval);
+        policeCadRefreshInterval = null;
+    }
+
+    document.body.classList.remove('menu-open');
+    isPoliceMenuOpen = false;
+    isRobberMenuOpen = false;
+}
+
 function showPoliceMenu(data = {}) {
+    hideRoleActionMenus();
+
     let policeMenu = document.getElementById('police-menu');
     if (!policeMenu) {
         policeMenu = document.createElement('section');
