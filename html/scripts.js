@@ -4517,6 +4517,7 @@ class EnhancedCharacterEditor {
         this.populateClothingControls();
         this.setupEventListeners();
         this.setupSliderHandlers();
+        this.enhanceSliderControls();
         console.log('[CNR_CHARACTER_EDITOR] Enhanced Character Editor initialized');
     }
 
@@ -4655,6 +4656,90 @@ class EnhancedCharacterEditor {
         this.sliderHandlerAttached = true;
     }
 
+    enhanceSliderControls() {
+        if (!this.editorElement) {
+            return;
+        }
+
+        this.editorElement.querySelectorAll('.slider').forEach((slider) => {
+            if (slider.closest('.slider-stepper')) {
+                return;
+            }
+
+            const stepper = document.createElement('div');
+            stepper.className = 'slider-stepper';
+
+            const decrementBtn = this.createSliderStepButton('left', '<');
+            const incrementBtn = this.createSliderStepButton('right', '>');
+            const track = document.createElement('div');
+            track.className = 'slider-step-track';
+
+            const parent = slider.parentNode;
+            if (!parent) {
+                return;
+            }
+
+            parent.insertBefore(stepper, slider);
+            track.appendChild(slider);
+            stepper.appendChild(decrementBtn);
+            stepper.appendChild(track);
+            stepper.appendChild(incrementBtn);
+        });
+
+        if (this.sliderStepHandlerAttached) {
+            return;
+        }
+
+        this.editorElement.addEventListener('click', (e) => {
+            const stepButton = e.target.closest('.slider-step-btn');
+            if (!stepButton || !this.editorElement.contains(stepButton)) {
+                return;
+            }
+
+            const stepper = stepButton.closest('.slider-stepper');
+            const slider = stepper?.querySelector('.slider');
+            if (!slider) {
+                return;
+            }
+
+            const direction = stepButton.dataset.direction === 'left' ? -1 : 1;
+            const step = parseFloat(slider.step || '1') || 1;
+            const min = parseFloat(slider.min);
+            const max = parseFloat(slider.max);
+            const currentValue = parseFloat(slider.value);
+            const precision = this.getSliderPrecision(slider.step);
+
+            let nextValue = currentValue + (step * direction);
+            nextValue = Math.min(max, Math.max(min, nextValue));
+            nextValue = Number(nextValue.toFixed(precision));
+
+            if (nextValue === currentValue) {
+                return;
+            }
+
+            slider.value = nextValue.toString();
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+
+        this.sliderStepHandlerAttached = true;
+    }
+
+    createSliderStepButton(direction, label) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'slider-step-btn';
+        button.dataset.direction = direction;
+        button.setAttribute('aria-label', `${direction === 'left' ? 'Decrease' : 'Increase'} value`);
+        button.textContent = label;
+        return button;
+    }
+
+    getSliderPrecision(stepValue) {
+        const stepString = String(stepValue || '1');
+        const decimalIndex = stepString.indexOf('.');
+        return decimalIndex === -1 ? 0 : (stepString.length - decimalIndex - 1);
+    }
+
     handleSliderChange(slider) {
         const feature = slider.dataset.feature;
         const category = slider.dataset.category || 'basic';
@@ -4787,6 +4872,8 @@ class EnhancedCharacterEditor {
                 this.renderClothingControlGroup('prop', definition)
             ).join('');
         }
+
+        this.enhanceSliderControls();
     }
 
     renderClothingControlGroup(entryType, definition) {
@@ -4831,7 +4918,7 @@ class EnhancedCharacterEditor {
     }
 
     updateSliderDisplay(slider, rawValue) {
-        const valueDisplay = slider.parentElement?.querySelector('.value-display');
+        const valueDisplay = slider.closest('.control-group')?.querySelector('.value-display');
         if (!valueDisplay) {
             return;
         }
