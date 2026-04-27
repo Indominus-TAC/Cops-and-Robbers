@@ -1041,6 +1041,17 @@ local function SetMenuFocus(hasFocus, hasCursor)
     SetNuiFocusKeepInput(false)
 end
 
+local function SyncCharacterEditorNuiData()
+    if not currentCharacterData then
+        return
+    end
+
+    SendNUIMessage({
+        action = 'syncCharacterEditorData',
+        characterData = currentCharacterData
+    })
+end
+
 -- Open character editor
 function OpenCharacterEditor(role, characterSlot)
     if isInCharacterEditor then
@@ -5081,30 +5092,32 @@ RegisterNUICallback('characterEditor_switchGender', function(data, cb)
     currentCharacterData.model = modelName
     ApplyCharacterData(currentCharacterData, PlayerPedId())
     UpdateCharacterEditorCamera()
-    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
+    SyncCharacterEditorNuiData()
+    cb({ success = true })
 end)
 
 RegisterNUICallback('characterEditor_previewUniform', function(data, cb)
     local presetIndex = tonumber(data and data.presetIndex)
     local success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false
-    cb({
-        success = success,
-        characterData = success and DeepCopyCharacterData(currentCharacterData) or nil
-    })
+    if success then
+        SyncCharacterEditorNuiData()
+    end
+    cb({ success = success })
 end)
 
 RegisterNUICallback('characterEditor_applyUniform', function(data, cb)
     local presetIndex = tonumber(data and data.presetIndex)
     local success = presetIndex and ApplyUniformPresetForCurrentRole(presetIndex + 1) or false
-    cb({
-        success = success,
-        characterData = success and DeepCopyCharacterData(currentCharacterData) or nil
-    })
+    if success then
+        SyncCharacterEditorNuiData()
+    end
+    cb({ success = success })
 end)
 
 RegisterNUICallback('characterEditor_cancelUniformPreview', function(data, cb)
     ApplyCharacterData(currentCharacterData, PlayerPedId())
-    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
+    SyncCharacterEditorNuiData()
+    cb({ success = true })
 end)
 
 RegisterNUICallback('characterEditor_reset', function(data, cb)
@@ -5130,8 +5143,8 @@ RegisterNUICallback('characterEditor_reset', function(data, cb)
 
     ApplyCharacterData(currentCharacterData, PlayerPedId())
     UpdateCharacterEditorCamera()
-
-    cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
+    SyncCharacterEditorNuiData()
+    cb({ success = true })
 end)
 
 RegisterNUICallback('characterEditor_loadCharacter', function(data, cb)
@@ -5156,7 +5169,8 @@ RegisterNUICallback('characterEditor_loadCharacter', function(data, cb)
 
         ApplyCharacterData(currentCharacterData, PlayerPedId())
         UpdateCharacterEditorCamera()
-        cb({ success = true, characterData = DeepCopyCharacterData(currentCharacterData) })
+        SyncCharacterEditorNuiData()
+        cb({ success = true })
         return
     end
 

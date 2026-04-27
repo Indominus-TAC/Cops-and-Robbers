@@ -322,6 +322,12 @@ window.addEventListener('message', function(event) {
         case 'updateCharacterSlot':
             updateCharacterSlot(data.characterKey, data.characterData);
             break;
+        case 'syncCharacterEditorData':
+            characterEditorData.characterData = data.characterData || {};
+            if (window.enhancedCharacterEditor) {
+                window.enhancedCharacterEditor.syncCharacterData(data.characterData || {});
+            }
+            break;
         case 'testCharacterEditor':
             const testEditor = document.getElementById('character-editor-container');
             if (testEditor) {
@@ -4734,9 +4740,8 @@ class EnhancedCharacterEditor {
 
         // Send to client
         this.sendNUIMessage('characterEditor_switchGender', { gender: gender }).then((result) => {
-            if (result && result.success && result.characterData) {
-                this.characterData = result.characterData;
-                this.updateSlidersFromCharacterData();
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to switch gender:', result?.error || 'Unknown error');
             }
         });
     }
@@ -4914,9 +4919,8 @@ class EnhancedCharacterEditor {
         this.sendNUIMessage('characterEditor_previewUniform', {
             presetIndex: this.selectedUniformPreset
         }).then((result) => {
-            if (result && result.success && result.characterData) {
-                this.characterData = result.characterData;
-                this.updateSlidersFromCharacterData();
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to preview uniform:', result?.error || 'Unknown error');
             }
         });
 
@@ -4933,9 +4937,8 @@ class EnhancedCharacterEditor {
         this.sendNUIMessage('characterEditor_applyUniform', {
             presetIndex: this.selectedUniformPreset
         }).then((result) => {
-            if (result && result.success && result.characterData) {
-                this.characterData = result.characterData;
-                this.updateSlidersFromCharacterData();
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to apply uniform:', result?.error || 'Unknown error');
             }
         });
 
@@ -4948,9 +4951,8 @@ class EnhancedCharacterEditor {
 
     cancelUniformPreview() {
         this.sendNUIMessage('characterEditor_cancelUniformPreview', {}).then((result) => {
-            if (result && result.success && result.characterData) {
-                this.characterData = result.characterData;
-                this.updateSlidersFromCharacterData();
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to cancel uniform preview:', result?.error || 'Unknown error');
             }
         });
 
@@ -5019,9 +5021,8 @@ class EnhancedCharacterEditor {
         this.sendNUIMessage('characterEditor_loadCharacter', {
             characterKey: this.selectedCharacterSlot
         }).then((result) => {
-            if (result && result.success && result.characterData) {
-                this.characterData = result.characterData;
-                this.updateSlidersFromCharacterData();
+            if (!result || !result.success) {
+                console.error('[CNR_CHARACTER_EDITOR] Failed to load character:', result?.error || 'Unknown error');
             }
         });
     }
@@ -5054,9 +5055,8 @@ class EnhancedCharacterEditor {
     resetCharacter() {
         if (confirm('Are you sure you want to reset the character to default? All current changes will be lost.')) {
             this.sendNUIMessage('characterEditor_reset', {}).then((result) => {
-                if (result && result.success && result.characterData) {
-                    this.characterData = result.characterData;
-                    this.updateSlidersFromCharacterData();
+                if (!result || !result.success) {
+                    console.error('[CNR_CHARACTER_EDITOR] Failed to reset character:', result?.error || 'Unknown error');
                 }
             });
         }
@@ -5183,6 +5183,11 @@ class EnhancedCharacterEditor {
         if (this.isOpen && characterKey.startsWith(`${this.currentRole}_`)) {
             this.populateCharacterSlots();
         }
+    }
+
+    syncCharacterData(characterData) {
+        this.characterData = characterData || {};
+        this.updateSlidersFromCharacterData();
     }
 
     sendNUIMessage(action, data) {
