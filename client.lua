@@ -1821,9 +1821,39 @@ end
 
 local function SelectPdGarageSpawnPoint(spawnPoints, clearRadius)
     local radius = tonumber(clearRadius) or 4.0
+    local slotRadius = math.max(math.min(radius * 0.55, radius), 2.25)
+    local verticalTolerance = math.max(radius * 0.5, 2.5)
+
+    local function isSpawnPointBlocked(spawnCoords)
+        if not spawnCoords then
+            return true
+        end
+
+        if type(GetGamePool) ~= "function" then
+            return IsAnyVehicleNearPoint(spawnCoords.x, spawnCoords.y, spawnCoords.z, slotRadius)
+        end
+
+        local slotRadiusSq = slotRadius * slotRadius
+        local vehicles = GetGamePool('CVehicle') or {}
+        for _, vehicle in ipairs(vehicles) do
+            if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+                local vehicleCoords = GetEntityCoords(vehicle)
+                if math.abs(vehicleCoords.z - spawnCoords.z) <= verticalTolerance then
+                    local dx = vehicleCoords.x - spawnCoords.x
+                    local dy = vehicleCoords.y - spawnCoords.y
+                    if ((dx * dx) + (dy * dy)) <= slotRadiusSq then
+                        return true
+                    end
+                end
+            end
+        end
+
+        return false
+    end
+
     for _, spawnPoint in ipairs(spawnPoints or {}) do
         local spawnCoords = GetEntryCoords(spawnPoint)
-        if spawnCoords and not IsAnyVehicleNearPoint(spawnCoords.x, spawnCoords.y, spawnCoords.z, radius) then
+        if spawnCoords and not isSpawnPointBlocked(spawnCoords) then
             return spawnPoint
         end
     end
