@@ -5160,11 +5160,19 @@ class EnhancedCharacterEditor {
         });
 
         Object.entries(this.characterData.components || {}).forEach(([componentId, component]) => {
+            if (!component || typeof component !== 'object') {
+                return;
+            }
+
             this.syncClothingControl('component', componentId, 'drawable', component.drawable ?? 0);
             this.syncClothingControl('component', componentId, 'texture', component.texture ?? 0);
         });
 
         Object.entries(this.characterData.props || {}).forEach(([propId, prop]) => {
+            if (!prop || typeof prop !== 'object') {
+                return;
+            }
+
             this.syncClothingControl('prop', propId, 'drawable', prop.drawable ?? -1);
             this.syncClothingControl('prop', propId, 'texture', prop.texture ?? 0);
         });

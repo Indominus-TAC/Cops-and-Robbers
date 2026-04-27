@@ -1035,6 +1035,11 @@ function GetCurrentCharacterData(ped)
     return DeepCopyCharacterData(currentCharacterData)
 end
 
+local function SetMenuFocus(hasFocus, hasCursor)
+    SetNuiFocus(hasFocus, hasCursor)
+    SetNuiFocusKeepInput(false)
+end
+
 -- Open character editor
 function OpenCharacterEditor(role, characterSlot)
     if isInCharacterEditor then
@@ -1228,11 +1233,6 @@ local xpGainTimer = 0
 local currentXP = 0
 local currentLevel = 1
 local currentNextLvlXP = 100
-
-local function SetMenuFocus(hasFocus, hasCursor)
-    SetNuiFocus(hasFocus, hasCursor)
-    SetNuiFocusKeepInput(false)
-end
 
 -- Enhanced logging function
 local function LogProgressionClient(message, level)
