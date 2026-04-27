@@ -170,6 +170,7 @@ local trackedPdGarageVehicles = {}
 local CreatePersistentRoleVehicle
 local adminPanelRequestStartedAt = 0
 local ADMIN_PANEL_REQUEST_GUARD_MS = 1500
+local ADMIN_PANEL_FALLBACK_RAW_KEY = 123 -- F12 virtual key code.
 
 local function BeginAdminPanelRequest()
     adminPanelRequestStartedAt = GetGameTimer()
@@ -185,6 +186,21 @@ local function IsAdminPanelRequestPending()
     end
 
     return (GetGameTimer() - adminPanelRequestStartedAt) < ADMIN_PANEL_REQUEST_GUARD_MS
+end
+
+local function ShouldUseAdminPanelRawKeyFallback()
+    local configuredKey = Config and Config.Keybinds and Config.Keybinds.toggleAdminPanelKey or "F12"
+    return type(configuredKey) ~= "string" or configuredKey:upper() == "F12"
+end
+
+local function RequestAdminPanelOpen()
+    if adminPanelVisible or IsAdminPanelRequestPending() then
+        return false
+    end
+
+    BeginAdminPanelRequest()
+    TriggerServerEvent('cnr:checkAdminStatus')
+    return true
 end
 
 -- Function to get the items, accessible by other parts of this script
@@ -2458,12 +2474,7 @@ end)
 -- =====================================
 
 RegisterCommand('+cnr_toggleadminpanel', function()
-    if adminPanelVisible or IsAdminPanelRequestPending() then
-        return
-    end
-
-    BeginAdminPanelRequest()
-    TriggerServerEvent('cnr:checkAdminStatus')
+    RequestAdminPanelOpen()
 end, false)
 
 RegisterCommand('-cnr_toggleadminpanel', function() end, false)
@@ -2479,6 +2490,18 @@ end, false)
 
 RegisterCommand('-cnr_openrolemenu', function() end, false)
 RegisterKeyMapping('+cnr_openrolemenu', 'Open Police/Robber Menu', 'keyboard', Config.Keybinds.openRoleMenuKey or 'F11')
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+
+        if type(IsRawKeyPressed) == "function"
+            and ShouldUseAdminPanelRawKeyFallback()
+            and IsRawKeyPressed(ADMIN_PANEL_FALLBACK_RAW_KEY) then
+            RequestAdminPanelOpen()
+        end
+    end
+end)
 
 -- F5 - Role Selection Menu
 Citizen.CreateThread(function()
