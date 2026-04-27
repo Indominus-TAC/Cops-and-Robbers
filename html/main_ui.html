@@ -484,9 +484,9 @@
                 <!-- Preview area is now transparent for 3D model viewing -->
                 <div class="preview-overlay">
                     <div class="camera-controls">
-                        <button id="camera-face-btn" class="camera-btn active" data-mode="face">Face</button>
+                        <button id="camera-face-btn" class="camera-btn" data-mode="face">Face</button>
                         <button id="camera-body-btn" class="camera-btn" data-mode="body">Body</button>
-                        <button id="camera-full-btn" class="camera-btn" data-mode="full">Full</button>
+                        <button id="camera-full-btn" class="camera-btn active" data-mode="full">Full</button>
                     </div>
                     <div class="character-rotation">
                         <button id="rotate-left-btn" class="rotate-btn" data-direction="left">◀</button>
@@ -625,10 +625,169 @@
 
                 <!-- Clothing Tab -->
                 <div id="clothing-tab" class="customization-tab">
-                    <div class="clothing-components">
-                        <h3>Clothing Components</h3>
-                        <p>Individual clothing customization will be available here.</p>
-                        <p>Use the Uniforms tab for role-specific outfit presets.</p>
+                    <div class="customization-sections">
+                        <div class="customization-section">
+                            <h3>Clothing Components</h3>
+                            <p class="clothing-note">All clothing controls below are unrestricted. Any role can use any available outfit piece.</p>
+                            <div class="customization-controls clothing-controls">
+                                <div class="control-group">
+                                    <label for="component-1-drawable-slider">Mask Style</label>
+                                    <input type="range" id="component-1-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="1" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-1-texture-slider">Mask Texture</label>
+                                    <input type="range" id="component-1-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="1" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-3-drawable-slider">Arms Style</label>
+                                    <input type="range" id="component-3-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="3" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-3-texture-slider">Arms Texture</label>
+                                    <input type="range" id="component-3-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="3" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-4-drawable-slider">Pants Style</label>
+                                    <input type="range" id="component-4-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="4" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-4-texture-slider">Pants Texture</label>
+                                    <input type="range" id="component-4-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="4" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-5-drawable-slider">Bag Style</label>
+                                    <input type="range" id="component-5-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="5" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-5-texture-slider">Bag Texture</label>
+                                    <input type="range" id="component-5-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="5" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-6-drawable-slider">Shoes Style</label>
+                                    <input type="range" id="component-6-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="6" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-6-texture-slider">Shoes Texture</label>
+                                    <input type="range" id="component-6-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="6" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-7-drawable-slider">Accessories Style</label>
+                                    <input type="range" id="component-7-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="7" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-7-texture-slider">Accessories Texture</label>
+                                    <input type="range" id="component-7-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="7" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-8-drawable-slider">Undershirt Style</label>
+                                    <input type="range" id="component-8-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="8" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-8-texture-slider">Undershirt Texture</label>
+                                    <input type="range" id="component-8-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="8" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-9-drawable-slider">Armor Style</label>
+                                    <input type="range" id="component-9-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="9" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-9-texture-slider">Armor Texture</label>
+                                    <input type="range" id="component-9-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="9" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-10-drawable-slider">Decal Style</label>
+                                    <input type="range" id="component-10-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="10" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-10-texture-slider">Decal Texture</label>
+                                    <input type="range" id="component-10-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="10" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-11-drawable-slider">Top Style</label>
+                                    <input type="range" id="component-11-drawable-slider" class="clothing-slider" data-entry-type="component" data-target-id="11" data-value-type="drawable" min="0" max="255" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="component-11-texture-slider">Top Texture</label>
+                                    <input type="range" id="component-11-texture-slider" class="clothing-slider" data-entry-type="component" data-target-id="11" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="customization-section">
+                            <h3>Props</h3>
+                            <div class="customization-controls clothing-controls">
+                                <div class="control-group">
+                                    <label for="prop-0-drawable-slider">Hat Style</label>
+                                    <input type="range" id="prop-0-drawable-slider" class="clothing-slider" data-entry-type="prop" data-target-id="0" data-value-type="drawable" min="-1" max="255" value="-1">
+                                    <span class="slider-value">-1</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-0-texture-slider">Hat Texture</label>
+                                    <input type="range" id="prop-0-texture-slider" class="clothing-slider" data-entry-type="prop" data-target-id="0" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-1-drawable-slider">Glasses Style</label>
+                                    <input type="range" id="prop-1-drawable-slider" class="clothing-slider" data-entry-type="prop" data-target-id="1" data-value-type="drawable" min="-1" max="255" value="-1">
+                                    <span class="slider-value">-1</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-1-texture-slider">Glasses Texture</label>
+                                    <input type="range" id="prop-1-texture-slider" class="clothing-slider" data-entry-type="prop" data-target-id="1" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-2-drawable-slider">Ear Accessory Style</label>
+                                    <input type="range" id="prop-2-drawable-slider" class="clothing-slider" data-entry-type="prop" data-target-id="2" data-value-type="drawable" min="-1" max="255" value="-1">
+                                    <span class="slider-value">-1</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-2-texture-slider">Ear Accessory Texture</label>
+                                    <input type="range" id="prop-2-texture-slider" class="clothing-slider" data-entry-type="prop" data-target-id="2" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-6-drawable-slider">Watch Style</label>
+                                    <input type="range" id="prop-6-drawable-slider" class="clothing-slider" data-entry-type="prop" data-target-id="6" data-value-type="drawable" min="-1" max="255" value="-1">
+                                    <span class="slider-value">-1</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-6-texture-slider">Watch Texture</label>
+                                    <input type="range" id="prop-6-texture-slider" class="clothing-slider" data-entry-type="prop" data-target-id="6" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-7-drawable-slider">Bracelet Style</label>
+                                    <input type="range" id="prop-7-drawable-slider" class="clothing-slider" data-entry-type="prop" data-target-id="7" data-value-type="drawable" min="-1" max="255" value="-1">
+                                    <span class="slider-value">-1</span>
+                                </div>
+                                <div class="control-group">
+                                    <label for="prop-7-texture-slider">Bracelet Texture</label>
+                                    <input type="range" id="prop-7-texture-slider" class="clothing-slider" data-entry-type="prop" data-target-id="7" data-value-type="texture" min="0" max="63" value="0">
+                                    <span class="slider-value">0</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

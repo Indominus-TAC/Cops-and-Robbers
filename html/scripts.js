@@ -3882,6 +3882,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // Character editor data is already declared at the top of the file
 
 function initializeCharacterEditor() {
+    if (window.characterEditorLegacyUiInitialized) {
+        return;
+    }
+
     // Camera controls
     document.querySelectorAll('.camera-btn').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -3951,6 +3955,43 @@ function initializeCharacterEditor() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ category: category, feature: feature, value: value })
+            });
+        });
+    });
+
+    document.querySelectorAll('.clothing-slider').forEach(slider => {
+        slider.addEventListener('input', function() {
+            const entryType = this.getAttribute('data-entry-type') || 'component';
+            const targetId = parseInt(this.getAttribute('data-target-id'), 10);
+            const valueType = this.getAttribute('data-value-type');
+            const value = parseInt(this.value, 10);
+
+            const valueDisplay = this.parentElement.querySelector('.slider-value');
+            if (valueDisplay) {
+                valueDisplay.textContent = value.toString();
+            }
+
+            fetch(`https://${CNRConfig.getResourceName()}/characterEditor_updateComponent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entryType: entryType,
+                    targetId: targetId,
+                    valueType: valueType,
+                    value: value
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (!result || !result.success) {
+                    return;
+                }
+
+                syncClothingControl(result.entryType, result.targetId, 'drawable', result.drawable);
+                syncClothingControl(result.entryType, result.targetId, 'texture', result.texture);
+            })
+            .catch(error => {
+                console.error('[CNR_CHARACTER_EDITOR] Error updating clothing:', error);
             });
         });
     });
@@ -4026,10 +4067,13 @@ function initializeCharacterEditor() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ characterKey: characterEditorData.selectedCharacterSlot })
+                }).then(response => response.json()).then(result => {
+                    if (result && result.success && characterEditorData.playerCharacters) {
+                        delete characterEditorData.playerCharacters[characterEditorData.selectedCharacterSlot];
+                    }
+
+                    updateCharacterSlots();
                 });
-                
-                // Refresh character slots
-                updateCharacterSlots();
             }
         });
     }
@@ -4068,6 +4112,9 @@ function initializeCharacterEditor() {
             });
         });
     }
+
+    window.characterEditorLegacyUiInitialized = true;
+    window.characterEditorLegacyHandlersSetup = true;
 }
 
 function switchCustomizationTab(category) {
@@ -4087,6 +4134,20 @@ function switchCustomizationTab(category) {
     const targetTab = document.getElementById(category + '-tab');
     if (targetTab) {
         targetTab.classList.add('active');
+    }
+}
+
+function syncClothingControl(entryType, targetId, valueType, value) {
+    const slider = document.getElementById(`${entryType}-${targetId}-${valueType}-slider`);
+    if (!slider) {
+        return;
+    }
+
+    slider.value = value;
+
+    const valueDisplay = slider.parentElement.querySelector('.slider-value');
+    if (valueDisplay) {
+        valueDisplay.textContent = value.toString();
     }
 }
 
@@ -4112,6 +4173,9 @@ function openCharacterEditor(data) {
         characterEditorData.currentSlot = data.characterSlot;
         characterEditorData.characterData = data.characterData;
         characterEditorData.uniformPresets = data.uniformPresets;
+        characterEditorData.playerCharacters = data.playerCharacters || {};
+        characterEditorData.selectedUniformPreset = null;
+        characterEditorData.selectedCharacterSlot = null;
 
         // Update UI elements
         const roleElement = document.getElementById('character-editor-role');
@@ -4119,6 +4183,10 @@ function openCharacterEditor(data) {
         
         if (roleElement) roleElement.textContent = data.role.charAt(0).toUpperCase() + data.role.slice(1);
         if (slotElement) slotElement.textContent = `Slot ${data.characterSlot}`;
+        switchCustomizationTab('appearance');
+        document.querySelectorAll('.camera-btn').forEach(button => {
+            button.classList.toggle('active', button.getAttribute('data-mode') === 'full');
+        });
 
         // Populate uniform presets
         updateUniformPresets();
@@ -4165,6 +4233,8 @@ function closeCharacterEditor() {
     
     try {
         characterEditorData.isOpen = false;
+        characterEditorData.selectedUniformPreset = null;
+        characterEditorData.selectedCharacterSlot = null;
         
         const characterEditor = document.getElementById('character-editor');
         if (characterEditor) {
@@ -4218,6 +4288,14 @@ function updateUniformPresets() {
     if (!presetList || !characterEditorData.uniformPresets) return;
 
     presetList.innerHTML = '';
+    characterEditorData.selectedUniformPreset = null;
+
+    const previewBtn = document.getElementById('preview-uniform-btn');
+    const applyBtn = document.getElementById('apply-uniform-btn');
+    const cancelBtn = document.getElementById('cancel-uniform-btn');
+    if (previewBtn) previewBtn.disabled = true;
+    if (applyBtn) applyBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
 
     characterEditorData.uniformPresets.forEach((preset, index) => {
         const presetElement = document.createElement('div');
@@ -4298,6 +4376,10 @@ function updateSlidersFromCharacterData() {
 
 // Character Editor Slider Event Handlers
 function setupCharacterEditorEventHandlers() {
+    if (window.characterEditorLegacyHandlersSetup) {
+        return;
+    }
+
     console.log('[CNR_CHARACTER_EDITOR] Setting up event handlers');
     
     // Basic appearance sliders
@@ -4495,6 +4577,12 @@ function updateCharacterSlots() {
     if (!slotList) return;
 
     slotList.innerHTML = '';
+    characterEditorData.selectedCharacterSlot = null;
+
+    const loadBtn = document.getElementById('load-character-btn');
+    const deleteBtn = document.getElementById('delete-character-btn');
+    if (loadBtn) loadBtn.disabled = true;
+    if (deleteBtn) deleteBtn.disabled = true;
 
     // Create slots for current role
     for (let i = 1; i <= 2; i++) {
@@ -4535,35 +4623,59 @@ function updateSlidersFromCharacterData() {
     const characterData = characterEditorData.characterData;
     if (!characterData) return;
 
-    // Update basic appearance sliders
-    const basicFeatures = ['face', 'skin', 'hair', 'hairColor', 'hairHighlight', 'eyeColor', 'beard', 'beardColor', 'eyebrows', 'eyebrowsColor'];
-    
-    basicFeatures.forEach(feature => {
-        const slider = document.getElementById(feature.replace(/([A-Z])/g, '-$1').toLowerCase() + '-slider');
-        if (slider && characterData[feature] !== undefined) {
-            slider.value = characterData[feature];
-            
-            const valueDisplay = slider.parentElement.querySelector('.slider-value');
-            if (valueDisplay) {
-                valueDisplay.textContent = characterData[feature].toString();
-            }
+    document.querySelectorAll('#character-editor .clothing-slider').forEach(slider => {
+        const resetValue = slider.min === '-1' ? -1 : 0;
+        slider.value = resetValue;
+
+        const valueDisplay = slider.parentElement.querySelector('.slider-value');
+        if (valueDisplay) {
+            valueDisplay.textContent = resetValue.toString();
         }
     });
 
-    // Update facial feature sliders
-    if (characterData.faceFeatures) {
-        Object.keys(characterData.faceFeatures).forEach(feature => {
-            const slider = document.getElementById(feature.replace(/([A-Z])/g, '-$1').toLowerCase() + '-slider');
-            if (slider) {
-                slider.value = characterData.faceFeatures[feature];
-                
-                const valueDisplay = slider.parentElement.querySelector('.slider-value');
-                if (valueDisplay) {
-                    valueDisplay.textContent = characterData.faceFeatures[feature].toFixed(1);
-                }
-            }
-        });
-    }
+    document.querySelectorAll('#character-editor .customization-slider').forEach(slider => {
+        const feature = slider.getAttribute('data-feature');
+        const category = slider.getAttribute('data-category');
+        const source = category === 'faceFeatures'
+            ? (characterData.faceFeatures || {})
+            : characterData;
+
+        if (!feature || source[feature] === undefined) {
+            return;
+        }
+
+        slider.value = source[feature];
+
+        const valueDisplay = slider.parentElement.querySelector('.slider-value');
+        if (valueDisplay) {
+            const numericValue = source[feature];
+            valueDisplay.textContent = slider.step && slider.step.includes('.')
+                ? Number(numericValue).toFixed(1)
+                : numericValue.toString();
+        }
+    });
+
+    const genderButtons = {
+        male: document.getElementById('gender-male-btn'),
+        female: document.getElementById('gender-female-btn')
+    };
+    const isFemaleModel = characterData.model === 'mp_f_freemode_01';
+    genderButtons.male?.classList.toggle('active', !isFemaleModel);
+    genderButtons.female?.classList.toggle('active', isFemaleModel);
+
+    const componentEntries = characterData.components || {};
+    Object.keys(componentEntries).forEach(componentId => {
+        const component = componentEntries[componentId] || {};
+        syncClothingControl('component', componentId, 'drawable', component.drawable ?? 0);
+        syncClothingControl('component', componentId, 'texture', component.texture ?? 0);
+    });
+
+    const propEntries = characterData.props || {};
+    Object.keys(propEntries).forEach(propId => {
+        const prop = propEntries[propId] || {};
+        syncClothingControl('prop', propId, 'drawable', prop.drawable ?? -1);
+        syncClothingControl('prop', propId, 'texture', prop.texture ?? 0);
+    });
 }
 
 // Character Editor Frame Management

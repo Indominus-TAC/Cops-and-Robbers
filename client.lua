@@ -450,6 +450,19 @@ local editorUI = {
     isVisible = false
 }
 
+local function DeepCopyCharacterData(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, entry in pairs(value) do
+        copy[key] = DeepCopyCharacterData(entry)
+    end
+
+    return copy
+end
+
 local function DestroyCharacterEditorCamera()
     if editorCamera and DoesCamExist(editorCamera) then
         RenderScriptCams(false, true, 250, true, true)
@@ -479,30 +492,31 @@ local function UpdateCharacterEditorCamera(mode)
     local focusCoords
     local distance
     local heightOffset
+    local targetHeightOffset
 
     if cameraMode == "face" then
         focusCoords = GetPedBoneCoords(ped, 31086, 0.0, 0.03, 0.0)
-        distance = 0.9
-        heightOffset = 0.02
+        distance = 0.82
+        heightOffset = 0.01
+        targetHeightOffset = 0.0
     elseif cameraMode == "body" then
-        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.95)
-        distance = 2.1
-        heightOffset = 0.1
+        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.98)
+        distance = 1.85
+        heightOffset = 0.08
+        targetHeightOffset = 0.03
     else
-        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.75)
-        distance = 3.15
-        heightOffset = 0.2
+        focusCoords = GetEntityCoords(ped) + vector3(0.0, 0.0, 0.9)
+        distance = 2.45
+        heightOffset = 0.12
+        targetHeightOffset = 0.02
     end
 
     local heading = GetEntityHeading(ped)
     local headingRadians = math.rad(heading)
     local forwardVector = vector3(-math.sin(headingRadians), math.cos(headingRadians), 0.0)
-    local rightVector = vector3(math.cos(headingRadians), math.sin(headingRadians), 0.0)
-    local framingOffset = cameraMode == "face" and -0.04 or (cameraMode == "body" and -0.14 or -0.28)
-    local targetCoords = focusCoords + (rightVector * framingOffset)
-    local cameraLateralOffset = framingOffset * 0.35
-    local camX = focusCoords.x - forwardVector.x * distance + rightVector.x * cameraLateralOffset
-    local camY = focusCoords.y - forwardVector.y * distance + rightVector.y * cameraLateralOffset
+    local targetCoords = focusCoords + vector3(0.0, 0.0, targetHeightOffset)
+    local camX = focusCoords.x - forwardVector.x * distance
+    local camY = focusCoords.y - forwardVector.y * distance
     local camZ = focusCoords.z + heightOffset
 
     if not editorCamera or not DoesCamExist(editorCamera) then
@@ -1018,7 +1032,7 @@ function GetCurrentCharacterData(ped)
     if not ped or not DoesEntityExist(ped) then
         return nil
     end
-    return currentCharacterData
+    return DeepCopyCharacterData(currentCharacterData)
 end
 
 -- Open character editor
@@ -1035,11 +1049,9 @@ function OpenCharacterEditor(role, characterSlot)
         return
     end
     
-    originalPlayerData = GetCurrentCharacterData(ped)
-    
     local characterKey = currentRole .. "_" .. currentCharacterSlot
     if playerCharacters[characterKey] then
-        currentCharacterData = playerCharacters[characterKey]
+        currentCharacterData = DeepCopyCharacterData(playerCharacters[characterKey])
     else
         currentCharacterData = GetDefaultCharacterData()
         local currentModel = GetEntityModel(ped)
@@ -1049,6 +1061,8 @@ function OpenCharacterEditor(role, characterSlot)
             currentCharacterData.model = "mp_m_freemode_01"
         end
     end
+
+    originalPlayerData = DeepCopyCharacterData(currentCharacterData)
     
     local modelToUse = currentCharacterData.model or "mp_m_freemode_01"
     local modelHash = GetHashKey(modelToUse)
@@ -1119,12 +1133,14 @@ function CloseCharacterEditor(save)
         local characterKey = string.format("%s_%d", currentRole, currentCharacterSlot)
         
         if currentCharacterData and type(currentCharacterData) == "table" then
-            playerCharacters[characterKey] = currentCharacterData
-            TriggerServerEvent('cnr:saveCharacterData', characterKey, currentCharacterData)
+            local characterToSave = DeepCopyCharacterData(currentCharacterData)
+            playerCharacters[characterKey] = characterToSave
+            TriggerServerEvent('cnr:saveCharacterData', characterKey, characterToSave)
         end
     else
         if originalPlayerData then
-            ApplyCharacterData(originalPlayerData, ped)
+            currentCharacterData = DeepCopyCharacterData(originalPlayerData)
+            ApplyCharacterData(currentCharacterData, ped)
         end
     end
     
@@ -4899,6 +4915,91 @@ RegisterNUICallback('characterEditor_updateFeature', function(data, cb)
     cb({ success = true })
 end)
 
+RegisterNUICallback('characterEditor_updateComponent', function(data, cb)
+    if not currentCharacterData then
+        cb({ success = false, error = 'Character editor is not active.' })
+        return
+    end
+
+    local ped = PlayerPedId()
+    if not ped or ped == 0 or not DoesEntityExist(ped) then
+        cb({ success = false, error = 'Player ped is unavailable.' })
+        return
+    end
+
+    local entryType = data and data.entryType == 'prop' and 'prop' or 'component'
+    local targetId = tonumber(data and (data.targetId or data.component))
+    local valueType = data and (data.valueType or data.type)
+    local rawValue = tonumber(data and data.value)
+
+    if targetId == nil or rawValue == nil or (valueType ~= 'drawable' and valueType ~= 'texture') then
+        cb({ success = false, error = 'Invalid clothing update.' })
+        return
+    end
+
+    currentCharacterData.components = currentCharacterData.components or {}
+    currentCharacterData.props = currentCharacterData.props or {}
+
+    local targetTable = entryType == 'prop' and currentCharacterData.props or currentCharacterData.components
+    local targetKey = tostring(targetId)
+    local targetEntry = targetTable[targetKey] or targetTable[targetId] or {
+        drawable = entryType == 'prop' and -1 or 0,
+        texture = 0
+    }
+
+    local clampedValue = rawValue
+
+    if entryType == 'component' then
+        if valueType == 'drawable' then
+            local maxDrawable = math.max(GetNumberOfPedDrawableVariations(ped, targetId) - 1, 0)
+            clampedValue = math.min(math.max(math.floor(rawValue), 0), maxDrawable)
+            targetEntry.drawable = clampedValue
+
+            local maxTexture = math.max(GetNumberOfPedTextureVariations(ped, targetId, clampedValue) - 1, 0)
+            targetEntry.texture = math.min(math.max(tonumber(targetEntry.texture) or 0, 0), maxTexture)
+        else
+            local drawable = tonumber(targetEntry.drawable) or 0
+            local maxTexture = math.max(GetNumberOfPedTextureVariations(ped, targetId, drawable) - 1, 0)
+            clampedValue = math.min(math.max(math.floor(rawValue), 0), maxTexture)
+            targetEntry.texture = clampedValue
+        end
+    else
+        if valueType == 'drawable' then
+            local maxDrawable = math.max(GetNumberOfPedPropDrawableVariations(ped, targetId) - 1, -1)
+            clampedValue = math.min(math.max(math.floor(rawValue), -1), maxDrawable)
+            targetEntry.drawable = clampedValue
+
+            if clampedValue == -1 then
+                targetEntry.texture = 0
+            else
+                local maxTexture = math.max(GetNumberOfPedPropTextureVariations(ped, targetId, clampedValue) - 1, 0)
+                targetEntry.texture = math.min(math.max(tonumber(targetEntry.texture) or 0, 0), maxTexture)
+            end
+        else
+            local drawable = tonumber(targetEntry.drawable)
+            if drawable == nil or drawable < 0 then
+                clampedValue = 0
+                targetEntry.texture = 0
+            else
+                local maxTexture = math.max(GetNumberOfPedPropTextureVariations(ped, targetId, drawable) - 1, 0)
+                clampedValue = math.min(math.max(math.floor(rawValue), 0), maxTexture)
+                targetEntry.texture = clampedValue
+            end
+        end
+    end
+
+    targetTable[targetKey] = targetEntry
+    ApplyCharacterData(currentCharacterData, ped)
+
+    cb({
+        success = true,
+        entryType = entryType,
+        targetId = targetId,
+        drawable = targetEntry.drawable,
+        texture = targetEntry.texture
+    })
+end)
+
 RegisterNUICallback('characterEditor_changeCamera', function(data, cb)
     UpdateCharacterEditorCamera(data and data.mode or "full")
     cb({ success = true })
@@ -4948,7 +5049,7 @@ end)
 RegisterNUICallback('characterEditor_loadCharacter', function(data, cb)
     local characterKey = data and data.characterKey
     if characterKey and playerCharacters[characterKey] then
-        currentCharacterData = playerCharacters[characterKey]
+        currentCharacterData = DeepCopyCharacterData(playerCharacters[characterKey])
         ApplyCharacterData(currentCharacterData, PlayerPedId())
         cb({ success = true })
         return
@@ -5235,7 +5336,7 @@ AddEventHandler('cnr:openCharacterEditor', function(role, characterSlot)
 end)
 
 AddEventHandler('cnr:loadedPlayerCharacters', function(characters)
-    playerCharacters = characters or {}
+    playerCharacters = DeepCopyCharacterData(characters or {})
 end)
 
 AddEventHandler('cnr:applyCharacterData', function(characterData)
@@ -5263,9 +5364,9 @@ end)
 AddEventHandler('cnr:receiveCharacterForRole', function(characterData)
     -- Handle character data received for role selection
     if characterData then
-        currentCharacterData = characterData
+        currentCharacterData = DeepCopyCharacterData(characterData)
         local ped = PlayerPedId()
-        ApplyCharacterData(characterData, ped)
+        ApplyCharacterData(currentCharacterData, ped)
     end
 end)
 

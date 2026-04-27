@@ -3638,6 +3638,16 @@ body::before {
     gap: 15px;
 }
 
+.clothing-controls {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.clothing-note {
+    margin: 0 0 15px;
+    color: #9fd89c;
+    font-size: 0.95em;
+}
+
 .control-group {
     display: flex;
     flex-direction: column;

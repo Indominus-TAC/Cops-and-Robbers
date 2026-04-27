@@ -992,7 +992,7 @@ function PlayerManager.ValidateCharacterData(characterData, role)
         for feature, value in pairs(characterData.faceFeatures) do
             if customization[feature] then
                 local range = customization[feature]
-                if type(value) == "number" and value < range.min or value > range.max then
+                if type(value) == "number" and (value < range.min or value > range.max) then
                     return false, "Invalid face feature value for " .. feature .. ": " .. value
                 end
             end
@@ -1045,7 +1045,7 @@ function PlayerManager.SanitizeCharacterData(characterData)
     if characterData.components and type(characterData.components) == "table" then
         sanitized.components = {}
         for componentId, component in pairs(characterData.components) do
-            if type(component) == "table" and component.drawable and component.texture then
+            if type(component) == "table" and component.drawable ~= nil and component.texture ~= nil then
                 sanitized.components[componentId] = {
                     drawable = tonumber(component.drawable) or 0,
                     texture = tonumber(component.texture) or 0
@@ -1057,7 +1057,7 @@ function PlayerManager.SanitizeCharacterData(characterData)
     if characterData.props and type(characterData.props) == "table" then
         sanitized.props = {}
         for propId, prop in pairs(characterData.props) do
-            if type(prop) == "table" and prop.drawable and prop.texture then
+            if type(prop) == "table" and prop.drawable ~= nil and prop.texture ~= nil then
                 sanitized.props[propId] = {
                     drawable = tonumber(prop.drawable) or -1,
                     texture = tonumber(prop.texture) or 0
