@@ -848,144 +848,290 @@ Config.CharacterEditor = {
     -- Role-specific uniform presets
     uniformPresets = {
         cop = {
-            {
-                name = "Patrol Officer",
-                description = "Standard patrol uniform",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 35, texture = 0 },  -- Legs
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 25, texture = 0 },  -- Shoes
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 58, texture = 0 },  -- Undershirt
-                    [9] = { drawable = 0, texture = 0 },   -- Body Armor
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 55, texture = 0 }  -- Tops
+            male = {
+                {
+                    name = "Patrol Officer",
+                    description = "Standard patrol uniform for male freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 35, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 25, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 58, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 55, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 46, texture = 0 },
+                        [1] = { drawable = 7, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = 46, texture = 0 },  -- Hat
-                    [1] = { drawable = 7, texture = 0 },   -- Glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
+                {
+                    name = "SWAT Officer",
+                    description = "Tactical response loadout for male freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 31, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 25, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 15, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 53, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 125, texture = 0 },
+                        [1] = { drawable = 15, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Detective",
+                    description = "Plain clothes detective outfit for male freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 24, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 10, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 31, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 28, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 4, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 }
             },
-            {
-                name = "SWAT Officer",
-                description = "Tactical response uniform",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask (no mask for better visibility)
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 31, texture = 0 },  -- Legs (tactical pants)
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 25, texture = 0 },  -- Shoes (tactical boots)
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 15, texture = 0 },  -- Undershirt (black)
-                    [9] = { drawable = 15, texture = 0 },  -- Body Armor (tactical vest)
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 53, texture = 0 }  -- Tops (tactical shirt)
+            female = {
+                {
+                    name = "Patrol Officer",
+                    description = "Standard patrol uniform for female freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 14, texture = 0 },
+                        [4] = { drawable = 34, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 25, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 35, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 48, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 45, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = 125, texture = 0 }, -- Tactical helmet
-                    [1] = { drawable = 15, texture = 0 },  -- Tactical glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
-                }
-            },
-            {
-                name = "Detective",
-                description = "Plain clothes detective",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 24, texture = 0 },  -- Legs
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 10, texture = 0 },  -- Shoes
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 31, texture = 0 },  -- Undershirt
-                    [9] = { drawable = 0, texture = 0 },   -- Body Armor
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 28, texture = 0 }  -- Tops
+                {
+                    name = "Tactical Officer",
+                    description = "Tactical response loadout for female freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 14, texture = 0 },
+                        [4] = { drawable = 30, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 24, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 17, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 50, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 124, texture = 0 },
+                        [1] = { drawable = 14, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = -1, texture = 0 },  -- Hat
-                    [1] = { drawable = 4, texture = 0 },   -- Glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
+                {
+                    name = "Detective",
+                    description = "Plain clothes detective outfit for female freemode cops",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 14, texture = 0 },
+                        [4] = { drawable = 10, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 21, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 14, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 27, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 }
             }
         },
         robber = {
-            {
-                name = "Street Criminal",
-                description = "Casual street wear",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 1, texture = 0 },   -- Legs
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 1, texture = 0 },   -- Shoes
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 15, texture = 0 },  -- Undershirt
-                    [9] = { drawable = 0, texture = 0 },   -- Body Armor
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 4, texture = 0 }   -- Tops
+            male = {
+                {
+                    name = "Street Criminal",
+                    description = "Casual streetwear preset for male freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 1, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 1, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 4, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 18, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = 18, texture = 0 },  -- Hat
-                    [1] = { drawable = -1, texture = 0 },  -- Glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
+                {
+                    name = "Heist Outfit",
+                    description = "Professional heist preset for male freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 24, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 10, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 31, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 32, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 5, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
+                },
+                {
+                    name = "Low Profile",
+                    description = "Blend-in preset for male freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 0, texture = 0 },
+                        [4] = { drawable = 0, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 4, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 0, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 }
             },
-            {
-                name = "Heist Outfit",
-                description = "Professional criminal attire",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 24, texture = 0 },  -- Legs
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 10, texture = 0 },  -- Shoes
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 31, texture = 0 },  -- Undershirt
-                    [9] = { drawable = 0, texture = 0 },   -- Body Armor
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 32, texture = 0 }  -- Tops
+            female = {
+                {
+                    name = "Street Criminal",
+                    description = "Casual streetwear preset for female freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 5, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 3, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 15, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 14, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = 14, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = -1, texture = 0 },  -- Hat
-                    [1] = { drawable = 5, texture = 0 },   -- Glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
-                }
-            },
-            {
-                name = "Casual Civilian",
-                description = "Blend in with civilians",
-                components = {
-                    [1] = { drawable = 0, texture = 0 },   -- Mask
-                    [3] = { drawable = 0, texture = 0 },   -- Arms/Torso
-                    [4] = { drawable = 0, texture = 0 },   -- Legs
-                    [5] = { drawable = 0, texture = 0 },   -- Bag
-                    [6] = { drawable = 4, texture = 0 },   -- Shoes
-                    [7] = { drawable = 0, texture = 0 },   -- Accessories
-                    [8] = { drawable = 15, texture = 0 },  -- Undershirt
-                    [9] = { drawable = 0, texture = 0 },   -- Body Armor
-                    [10] = { drawable = 0, texture = 0 },  -- Decals
-                    [11] = { drawable = 0, texture = 0 }   -- Tops
+                {
+                    name = "Heist Outfit",
+                    description = "Professional heist preset for female freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 30, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 10, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 39, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 57, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = 11, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 },
-                props = {
-                    [0] = { drawable = -1, texture = 0 },  -- Hat
-                    [1] = { drawable = -1, texture = 0 },  -- Glasses
-                    [2] = { drawable = -1, texture = 0 },  -- Ear
-                    [6] = { drawable = -1, texture = 0 },  -- Watch
-                    [7] = { drawable = -1, texture = 0 }   -- Bracelet
+                {
+                    name = "Low Profile",
+                    description = "Blend-in preset for female freemode robbers",
+                    components = {
+                        [1] = { drawable = 0, texture = 0 },
+                        [3] = { drawable = 15, texture = 0 },
+                        [4] = { drawable = 12, texture = 0 },
+                        [5] = { drawable = 0, texture = 0 },
+                        [6] = { drawable = 6, texture = 0 },
+                        [7] = { drawable = 0, texture = 0 },
+                        [8] = { drawable = 2, texture = 0 },
+                        [9] = { drawable = 0, texture = 0 },
+                        [10] = { drawable = 0, texture = 0 },
+                        [11] = { drawable = 8, texture = 0 }
+                    },
+                    props = {
+                        [0] = { drawable = -1, texture = 0 },
+                        [1] = { drawable = -1, texture = 0 },
+                        [2] = { drawable = -1, texture = 0 },
+                        [6] = { drawable = -1, texture = 0 },
+                        [7] = { drawable = -1, texture = 0 }
+                    }
                 }
             }
         }

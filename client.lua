@@ -1042,6 +1042,24 @@ local function SetMenuFocus(hasFocus, hasCursor)
     SetNuiFocusKeepInput(false)
 end
 
+local function IsFemaleCharacterModel(modelName)
+    return modelName == "mp_f_freemode_01" or modelName == GetHashKey("mp_f_freemode_01")
+end
+
+local function GetUniformPresetsForRoleAndModel(roleName, modelName)
+    local rolePresets = Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[roleName]
+    if type(rolePresets) ~= "table" then
+        return {}
+    end
+
+    if #rolePresets > 0 then
+        return rolePresets
+    end
+
+    local genderKey = IsFemaleCharacterModel(modelName) and "female" or "male"
+    return rolePresets[genderKey] or rolePresets.default or rolePresets.unisex or rolePresets.male or rolePresets.female or {}
+end
+
 local function SyncCharacterEditorNuiData()
     if not currentCharacterData then
         return
@@ -1049,7 +1067,8 @@ local function SyncCharacterEditorNuiData()
 
     SendNUIMessage({
         action = 'syncCharacterEditorData',
-        characterData = currentCharacterData
+        characterData = currentCharacterData,
+        uniformPresets = GetUniformPresetsForRoleAndModel(currentRole, currentCharacterData.model)
     })
 end
 
@@ -1127,7 +1146,7 @@ function OpenCharacterEditor(role, characterSlot)
         role = currentRole,
         characterSlot = currentCharacterSlot,
         characterData = currentCharacterData,
-        uniformPresets = (Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[currentRole]) or {},
+        uniformPresets = GetUniformPresetsForRoleAndModel(currentRole, currentCharacterData.model),
         customizationRanges = (Config.CharacterEditor and Config.CharacterEditor.customization) or {},
         playerCharacters = playerCharacters
     })
@@ -1196,7 +1215,7 @@ function CloseCharacterEditor(save)
 end
 
 local function ApplyUniformPresetForCurrentRole(presetIndex)
-    local rolePresets = Config.CharacterEditor and Config.CharacterEditor.uniformPresets and Config.CharacterEditor.uniformPresets[currentRole]
+    local rolePresets = GetUniformPresetsForRoleAndModel(currentRole, currentCharacterData and currentCharacterData.model)
     local preset = rolePresets and rolePresets[presetIndex]
     if not preset then
         return false
@@ -1213,18 +1232,40 @@ local function ApplyUniformPresetForCurrentRole(presetIndex)
 
     if preset.components then
         for componentId, componentData in pairs(preset.components) do
+            local numericComponentId = tonumber(componentId)
+            local drawable = math.floor(tonumber(componentData.drawable) or 0)
+            local texture = math.floor(tonumber(componentData.texture) or 0)
+            local maxDrawable = math.max(GetNumberOfPedDrawableVariations(ped, numericComponentId) - 1, 0)
+            drawable = math.min(math.max(drawable, 0), maxDrawable)
+
+            local maxTexture = math.max(GetNumberOfPedTextureVariations(ped, numericComponentId, drawable) - 1, 0)
+            texture = math.min(math.max(texture, 0), maxTexture)
+
             currentCharacterData.components[componentId] = {
-                drawable = componentData.drawable or 0,
-                texture = componentData.texture or 0
+                drawable = drawable,
+                texture = texture
             }
         end
     end
 
     if preset.props then
         for propId, propData in pairs(preset.props) do
+            local numericPropId = tonumber(propId)
+            local drawable = math.floor(tonumber(propData.drawable) or -1)
+            local texture = math.floor(tonumber(propData.texture) or 0)
+            local maxDrawable = math.max(GetNumberOfPedPropDrawableVariations(ped, numericPropId) - 1, -1)
+            drawable = math.min(math.max(drawable, -1), maxDrawable)
+
+            if drawable == -1 then
+                texture = 0
+            else
+                local maxTexture = math.max(GetNumberOfPedPropTextureVariations(ped, numericPropId, drawable) - 1, 0)
+                texture = math.min(math.max(texture, 0), maxTexture)
+            end
+
             currentCharacterData.props[propId] = {
-                drawable = propData.drawable or -1,
-                texture = propData.texture or 0
+                drawable = drawable,
+                texture = texture
             }
         end
     end

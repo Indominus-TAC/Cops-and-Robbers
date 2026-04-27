@@ -324,7 +324,13 @@ window.addEventListener('message', function(event) {
             break;
         case 'syncCharacterEditorData':
             characterEditorData.characterData = data.characterData || {};
+            if (Array.isArray(data.uniformPresets)) {
+                characterEditorData.uniformPresets = data.uniformPresets;
+            }
             if (window.enhancedCharacterEditor) {
+                if (Array.isArray(data.uniformPresets)) {
+                    window.enhancedCharacterEditor.syncUniformPresets(data.uniformPresets);
+                }
                 window.enhancedCharacterEditor.syncCharacterData(data.characterData || {});
             }
             break;
@@ -5183,6 +5189,12 @@ class EnhancedCharacterEditor {
         if (this.isOpen && characterKey.startsWith(`${this.currentRole}_`)) {
             this.populateCharacterSlots();
         }
+    }
+
+    syncUniformPresets(uniformPresets) {
+        this.uniformPresets = Array.isArray(uniformPresets) ? uniformPresets : [];
+        this.selectedUniformPreset = null;
+        this.populateUniformPresets();
     }
 
     syncCharacterData(characterData) {
