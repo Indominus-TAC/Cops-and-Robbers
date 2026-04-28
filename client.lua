@@ -1252,6 +1252,17 @@ local function SetMenuFocus(hasFocus, hasCursor)
     SetNuiFocusKeepInput(false)
 end
 
+Citizen.CreateThread(function()
+    while true do
+        if isRoleSelectionVisible and not isInCharacterEditor then
+            SetMenuFocus(true, true)
+            Citizen.Wait(250)
+        else
+            Citizen.Wait(1000)
+        end
+    end
+end)
+
 local function IsFemaleCharacterModel(modelName)
     return modelName == "mp_f_freemode_01" or modelName == GetHashKey("mp_f_freemode_01")
 end
