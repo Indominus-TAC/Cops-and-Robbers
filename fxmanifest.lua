@@ -32,6 +32,8 @@ server_scripts {
 
 -- Define client-side scripts.
 client_scripts {
+    'client_support_clipboard.lua', -- Clipboard / debug coordinate helpers.
+    'client_support_police.lua', -- Police department spawn and PD garage helpers.
     'client.lua',        -- Core client logic with consolidated systems (inventory, character editor, progression).
     'pvp_enable.lua',    -- Enables PvP on the server.
 }
