@@ -581,12 +581,183 @@ end
 
 local IsAdmin = IsPlayerAdmin
 
-local function GetPdGarageConfig()
-    if Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled then
-        return Config.PDGarage
+local function GetEntryCoords(entry)
+    if not entry then
+        return nil
+    end
+
+    if type(entry) == "vector3" or type(entry) == "vector4" then
+        return vector3(entry.x, entry.y, entry.z)
+    end
+
+    local location = entry.location or entry.pos or entry.coords
+    if location then
+        if type(location) == "vector3" or type(location) == "vector4" then
+            return vector3(location.x, location.y, location.z)
+        end
+
+        if type(location) == "table" and location.x and location.y and location.z then
+            return vector3(location.x, location.y, location.z)
+        end
+    end
+
+    if entry.x and entry.y and entry.z then
+        return vector3(entry.x, entry.y, entry.z)
     end
 
     return nil
+end
+
+local function GetEntryHeading(entry, fallbackHeading)
+    if not entry then
+        return fallbackHeading or 0.0
+    end
+
+    if type(entry) == "vector4" then
+        return entry.w
+    end
+
+    local location = entry.location or entry.pos or entry.coords
+    if type(location) == "vector4" then
+        return location.w
+    end
+
+    if type(location) == "table" and location.w then
+        return location.w
+    end
+
+    return entry.heading or fallbackHeading or 0.0
+end
+
+local function GetPoliceDepartments()
+    if Config and type(Config.PoliceDepartments) == "table" then
+        return Config.PoliceDepartments
+    end
+
+    return {}
+end
+
+local function BuildMergedPdGarageConfig(baseGarage, department)
+    local base = baseGarage or {}
+    local overrideGarage = department and department.garage or nil
+    if type(overrideGarage) ~= "table" then
+        return base
+    end
+
+    local merged = {}
+    for key, value in pairs(base) do
+        merged[key] = value
+    end
+
+    for key, value in pairs(overrideGarage) do
+        if key ~= "interaction" then
+            merged[key] = value
+        end
+    end
+
+    local mergedInteraction = {}
+    if type(base.interaction) == "table" then
+        for key, value in pairs(base.interaction) do
+            mergedInteraction[key] = value
+        end
+    end
+    if type(overrideGarage.interaction) == "table" then
+        for key, value in pairs(overrideGarage.interaction) do
+            mergedInteraction[key] = value
+        end
+    end
+    if next(mergedInteraction) then
+        merged.interaction = mergedInteraction
+    end
+
+    merged.departmentId = department and department.id or merged.departmentId
+    merged.departmentName = department and department.name or merged.departmentName
+    merged.title = merged.title or (department and department.name and (department.name .. " Garage")) or "PD Garage"
+    return merged
+end
+
+local function GetNearestPoliceDepartment(originCoords, requireGarage)
+    local departments = GetPoliceDepartments()
+    if #departments <= 0 then
+        return nil
+    end
+
+    local nearestDepartment = nil
+    local nearestDistance = math.huge
+
+    for _, department in ipairs(departments) do
+        local candidateEntry = nil
+        if requireGarage then
+            local garageInteraction = department.garage and department.garage.interaction
+            candidateEntry = garageInteraction and garageInteraction.location or nil
+        end
+
+        candidateEntry = candidateEntry or department.respawn or department.copStore
+        local candidateCoords = GetEntryCoords(candidateEntry)
+        if candidateCoords and originCoords then
+            local distance = #(originCoords - candidateCoords)
+            if distance < nearestDistance then
+                nearestDistance = distance
+                nearestDepartment = department
+            end
+        elseif not nearestDepartment then
+            nearestDepartment = department
+        end
+    end
+
+    return nearestDepartment or departments[1]
+end
+
+local function GetResolvedPdGarageContext(playerId)
+    local baseGarage = Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled and Config.PDGarage or nil
+    if not baseGarage then
+        return nil
+    end
+
+    local playerCoords = nil
+    local src = tonumber(playerId)
+    if src and src > 0 then
+        local playerPed = GetPlayerPed(tostring(src))
+        if playerPed and playerPed ~= 0 then
+            playerCoords = GetEntityCoords(playerPed)
+        end
+    end
+
+    local department = GetNearestPoliceDepartment(playerCoords, true)
+    local garage = BuildMergedPdGarageConfig(baseGarage, department)
+    if not garage or not garage.enabled then
+        return nil
+    end
+
+    return {
+        department = department,
+        garage = garage
+    }
+end
+
+local function GetPdGarageConfig(playerId)
+    local context = GetResolvedPdGarageContext(playerId)
+    if context then
+        return context.garage
+    end
+
+    return nil
+end
+
+local function GetRoleSpawnEntry(roleName)
+    if roleName == "cop" then
+        local departments = GetPoliceDepartments()
+        if #departments > 0 then
+            local department = departments[math.random(1, #departments)]
+            return department.respawn or (Config and Config.SpawnPoints and Config.SpawnPoints.cop) or nil, department
+        end
+    end
+
+    if Config and Config.SpawnPoints then
+        return Config.SpawnPoints[roleName], nil
+    end
+
+    return nil, nil
 end
 
 local function GetPdGaragePlayerState(playerId)
@@ -662,7 +833,7 @@ local function BroadcastPdGarageIssuedVehicleSync(targetPlayerId)
 end
 
 local function IsPlayerNearPdGarage(playerId, extraRadius)
-    local garage = GetPdGarageConfig()
+    local garage = GetPdGarageConfig(playerId)
     if not garage or not garage.interaction or not garage.interaction.location then
         return false
     end
@@ -687,7 +858,7 @@ local function IsPlayerNearPdGarage(playerId, extraRadius)
 end
 
 local function GetPdGarageAccessProfile(playerId, pData)
-    local garage = GetPdGarageConfig()
+    local garage = GetPdGarageConfig(playerId)
     if not garage then
         return false, "The PD garage is currently unavailable."
     end
@@ -714,21 +885,26 @@ local function GetPdGarageAccessProfile(playerId, pData)
     }
 end
 
-local function BuildPdGarageVehicleList(accessProfile)
-    local garage = GetPdGarageConfig()
+local function BuildPdGarageVehicleList(accessProfile, garage)
+    local resolvedGarage = garage or GetPdGarageConfig()
     local allowedVehicles = {}
     local vehicleLookup = {}
 
-    if not garage or type(garage.vehicleCategories) ~= "table" then
+    if not resolvedGarage or type(resolvedGarage.vehicleCategories) ~= "table" then
         return allowedVehicles, vehicleLookup
     end
 
-    for _, category in ipairs(garage.vehicleCategories) do
+    for _, category in ipairs(resolvedGarage.vehicleCategories) do
         local requiredLevel = tonumber(category.minLevel) or 1
         if accessProfile.isAdmin or accessProfile.level >= requiredLevel then
             for _, vehicle in ipairs(category.vehicles or {}) do
                 local model = string.lower(tostring(vehicle.model or ""))
                 if model ~= "" and not vehicleLookup[model] then
+                    local spawnPoints = vehicle.spawnPoints or category.spawnPoints
+                    if category.id == "aviation" and type(resolvedGarage.airSpawnPoints) == "table" and #resolvedGarage.airSpawnPoints > 0 then
+                        spawnPoints = resolvedGarage.airSpawnPoints
+                    end
+
                     local entry = {
                         model = model,
                         label = vehicle.label or model,
@@ -736,7 +912,7 @@ local function BuildPdGarageVehicleList(accessProfile)
                         category = category.name or "PD Vehicles",
                         accessLabel = category.accessLabel or "Authorized",
                         requiredLevel = requiredLevel,
-                        spawnPoints = vehicle.spawnPoints or category.spawnPoints,
+                        spawnPoints = spawnPoints,
                         spawnClearRadius = tonumber(vehicle.spawnClearRadius) or tonumber(category.spawnClearRadius) or nil
                     }
 
@@ -2330,16 +2506,8 @@ AddEventHandler('cnr:selectRole', function(selectedRole)
     local spawnLocation = nil
     local spawnHeading = 0.0
 
-    if normalizedRole == "cop" and Config.SpawnPoints and Config.SpawnPoints.cop then
-        spawnLocation = Config.SpawnPoints.cop
-        spawnHeading = 270.0 -- Facing west (common for Mission Row PD)
-    elseif normalizedRole == "robber" and Config.SpawnPoints and Config.SpawnPoints.robber then
-        spawnLocation = Config.SpawnPoints.robber
-        spawnHeading = 180.0 -- Facing south
-    elseif normalizedRole == "citizen" and Config.SpawnPoints and Config.SpawnPoints.citizen then
-        spawnLocation = Config.SpawnPoints.citizen
-        spawnHeading = 0.0
-    end
+    spawnLocation = select(1, GetRoleSpawnEntry(normalizedRole))
+    spawnHeading = GetEntryHeading(spawnLocation, spawnHeading)
 
     if spawnLocation then
         TriggerClientEvent('cnr:spawnPlayerAt', src, spawnLocation, spawnHeading, normalizedRole)
@@ -3738,13 +3906,13 @@ AddEventHandler('cnr:requestPdGarageMenu', SecurityEnhancements.SecureEventHandl
     end
 
     local accessProfile = accessProfileOrMessage
-    local garage = GetPdGarageConfig()
-    local vehicles = BuildPdGarageVehicleList(accessProfile)
+    local garage = GetPdGarageConfig(src)
+    local vehicles = BuildPdGarageVehicleList(accessProfile, garage)
 
     BroadcastPdGarageIssuedVehicleSync(src)
 
     TriggerClientEvent('cnr:showPdGarageMenu', src, {
-        title = 'Mission Row PD Garage',
+        title = garage.title or 'PD Garage',
         subtitle = 'Authorized police vehicles, recovery, repair, and cleanup tools.',
         vehicles = vehicles,
         activeVehicleCount = CountPdGarageActiveVehicles(src),
@@ -3806,9 +3974,9 @@ AddEventHandler('cnr:requestPdGarageVehicleSpawn', SecurityEnhancements.SecureEv
     end
 
     local accessProfile = accessProfileOrMessage
-    local garage = GetPdGarageConfig()
+    local garage = GetPdGarageConfig(src)
     local state = GetPdGaragePlayerState(src)
-    local _, vehicleLookup = BuildPdGarageVehicleList(accessProfile)
+    local _, vehicleLookup = BuildPdGarageVehicleList(accessProfile, garage)
     local selectedVehicle = vehicleLookup[normalizedModel]
 
     if not selectedVehicle then

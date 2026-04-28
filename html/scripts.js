@@ -601,6 +601,55 @@ function showToast(message, type = 'info', duration = 3000) {
         toast.style.animation = '';    }, duration);
 }
 
+function fallbackCopyTextToClipboard(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (error) {
+        console.warn('[CNR_UI] Clipboard fallback copy failed:', error);
+    }
+
+    document.body.removeChild(textarea);
+    return copied;
+}
+
+function copyTextToClipboard(text, successMessage) {
+    if (!text) {
+        return;
+    }
+
+    const onSuccess = () => {
+        showToast(successMessage || 'Copied to clipboard!', 'success');
+    };
+
+    const onFailure = () => {
+        const copied = fallbackCopyTextToClipboard(text);
+        if (copied) {
+            onSuccess();
+            return;
+        }
+
+        showToast('Clipboard copy was blocked. The coords are still printed in chat.', 'warning');
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(onFailure);
+        return;
+    }
+
+    onFailure();
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -6290,9 +6339,9 @@ class ProgressionSystem {
                     notification.parentNode.removeChild(notification);
                 }
             }, 300);
-        }, duration);
-    }
-    
+    }, duration);
+}
+
     showNotification(message, type = 'info', duration = 5000) {
         this.showProgressionNotification(message, type, duration);
     }
@@ -7461,6 +7510,10 @@ window.addEventListener('message', function(event) {
             if (bankingSystem) {
                 bankingSystem.showNotification(data.message, data.notificationType);
             }
+            break;
+
+        case 'copyToClipboard':
+            copyTextToClipboard(data.text, data.successMessage);
             break;
             
         // Heist system messages

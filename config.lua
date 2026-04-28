@@ -23,7 +23,7 @@ Config.DefaultStartMoney = 5000 -- Starting cash for new players.
 
 -- Spawn locations based on roles
 Config.SpawnPoints = {
-    cop    = vector3(452.6, -980.0, 30.7),   -- Police station location (Mission Row PD)
+    cop    = vector4(452.6, -980.0, 30.7, 270.0), -- Default police fallback (LVPD / Mission Row)
     robber = vector3(2126.7, 4794.1, 41.1),  -- Example: Countryside airport location (Sandy Shores Airfield)
     citizen = vector3(-260.0, -970.0, 31.2) -- Legion Square
 }
@@ -844,6 +844,134 @@ Config.PDGarage = {
                         { location = vector4(449.28, -981.18, 43.69, 90.0), label = "MRPD Helipad" }
                     }
                 }
+            }
+        }
+    }
+}
+
+Config.PoliceDepartments = {
+    {
+        id = "lvpd",
+        name = "LVPD Headquarters",
+        hasInterior = true,
+        respawn = vector4(452.60, -980.00, 30.70, 270.0),
+        copStore = vector4(451.39, -974.42, 30.69, 125.60),
+        garage = {
+            title = "LVPD Garage",
+            interaction = {
+                location = vector3(451.17, -1018.12, 28.48),
+                radius = 3.0,
+                drawDistance = 35.0,
+                helpText = "Press ~INPUT_CONTEXT~ to access the LVPD garage"
+            },
+            spawnPoints = {
+                { location = vector4(445.93, -1025.24, 28.63, 2.84), label = "LVPD Bay 1" },
+                { location = vector4(442.41, -1025.18, 28.70, 2.84), label = "LVPD Bay 2" },
+                { location = vector4(438.96, -1025.20, 28.77, 2.84), label = "LVPD Bay 3" },
+                { location = vector4(435.53, -1025.11, 28.84, 2.84), label = "LVPD Bay 4" }
+            },
+            airSpawnPoints = {
+                { location = vector4(449.28, -981.18, 43.69, 90.0), label = "LVPD Helipad" }
+            }
+        }
+    },
+    {
+        id = "vespucci",
+        name = "Vespucci Police Station",
+        hasInterior = false,
+        respawn = vector4(-1096.35, -826.17, 19.30, 126.0),
+        copStore = vector4(-1098.49, -830.37, 19.30, 306.0),
+        garage = {
+            title = "Vespucci Garage",
+            interaction = {
+                location = vector3(-1116.61, -847.35, 13.34),
+                radius = 3.0,
+                drawDistance = 35.0,
+                helpText = "Press ~INPUT_CONTEXT~ to access the Vespucci garage"
+            },
+            spawnPoints = {
+                { location = vector4(-1113.85, -852.74, 13.35, 37.0), label = "Vespucci Bay 1" },
+                { location = vector4(-1111.10, -850.49, 13.35, 37.0), label = "Vespucci Bay 2" },
+                { location = vector4(-1108.54, -848.46, 13.35, 37.0), label = "Vespucci Bay 3" },
+                { location = vector4(-1105.94, -846.41, 13.35, 37.0), label = "Vespucci Bay 4" }
+            },
+            airSpawnPoints = {
+                { location = vector4(-1094.02, -835.45, 37.68, 308.0), label = "Vespucci Roof Pad" }
+            }
+        }
+    },
+    {
+        id = "davis",
+        name = "Davis Police Station",
+        hasInterior = false,
+        respawn = vector4(379.52, -1598.34, 29.29, 229.0),
+        copStore = vector4(381.74, -1601.34, 29.29, 229.0),
+        garage = {
+            title = "Davis Garage",
+            interaction = {
+                location = vector3(391.78, -1619.72, 29.29),
+                radius = 3.0,
+                drawDistance = 35.0,
+                helpText = "Press ~INPUT_CONTEXT~ to access the Davis garage"
+            },
+            spawnPoints = {
+                { location = vector4(402.15, -1625.63, 29.29, 230.0), label = "Davis Bay 1" },
+                { location = vector4(398.84, -1623.31, 29.29, 230.0), label = "Davis Bay 2" },
+                { location = vector4(395.49, -1620.98, 29.29, 230.0), label = "Davis Bay 3" },
+                { location = vector4(392.14, -1618.60, 29.29, 230.0), label = "Davis Bay 4" }
+            },
+            airSpawnPoints = {
+                { location = vector4(362.64, -1598.12, 36.95, 229.0), label = "Davis Roof Pad" }
+            }
+        }
+    },
+    {
+        id = "sandy",
+        name = "Sandy Shores Sheriff's Station",
+        hasInterior = false,
+        respawn = vector4(1853.68, 3688.93, 34.27, 210.0),
+        copStore = vector4(1851.34, 3690.87, 34.27, 210.0),
+        garage = {
+            title = "Sandy Shores Garage",
+            interaction = {
+                location = vector3(1864.48, 3696.04, 33.55),
+                radius = 3.0,
+                drawDistance = 35.0,
+                helpText = "Press ~INPUT_CONTEXT~ to access the Sandy Shores garage"
+            },
+            spawnPoints = {
+                { location = vector4(1868.67, 3694.89, 33.54, 210.0), label = "Sandy Bay 1" },
+                { location = vector4(1865.84, 3692.96, 33.54, 210.0), label = "Sandy Bay 2" },
+                { location = vector4(1862.94, 3691.08, 33.54, 210.0), label = "Sandy Bay 3" },
+                { location = vector4(1860.02, 3689.16, 33.54, 210.0), label = "Sandy Bay 4" }
+            },
+            airSpawnPoints = {
+                { location = vector4(1848.64, 3706.20, 38.15, 30.0), label = "Sandy Pad" }
+            }
+        }
+    },
+    {
+        id = "paleto",
+        name = "Paleto Bay Sheriff's Office",
+        hasInterior = false,
+        respawn = vector4(-448.25, 6008.74, 31.72, 45.0),
+        copStore = vector4(-449.86, 6012.18, 31.72, 45.0),
+        garage = {
+            title = "Paleto Bay Garage",
+            interaction = {
+                location = vector3(-459.48, 6001.49, 31.34),
+                radius = 3.0,
+                drawDistance = 35.0,
+                helpText = "Press ~INPUT_CONTEXT~ to access the Paleto Bay garage"
+            },
+            spawnPoints = {
+                { location = vector4(-463.36, 5995.68, 31.34, 135.0), label = "Paleto Bay 1" },
+                { location = vector4(-460.73, 5998.29, 31.34, 135.0), label = "Paleto Bay 2" },
+                { location = vector4(-458.09, 6000.84, 31.34, 135.0), label = "Paleto Bay 3" },
+                { location = vector4(-455.44, 6003.38, 31.34, 135.0), label = "Paleto Bay 4" }
+            },
+            airSpawnPoints = {
+                { location = vector4(-475.12, 5988.04, 37.01, 315.0), label = "Paleto Roof Pad" }
             }
         }
     }
@@ -2651,6 +2779,47 @@ end
 for _, medicalStore in ipairs(Config.MedicalStores) do
     if medicalStore and not existingNpcVendorIds[medicalStore.id] then
         table.insert(Config.NPCVendors, medicalStore)
+    end
+end
+
+local function SameConfigLocation(left, right)
+    if not left or not right then
+        return false
+    end
+
+    return math.abs((left.x or 0.0) - (right.x or 0.0)) < 0.05
+        and math.abs((left.y or 0.0) - (right.y or 0.0)) < 0.05
+        and math.abs((left.z or 0.0) - (right.z or 0.0)) < 0.05
+end
+
+local copStoreTemplate = nil
+for _, vendor in ipairs(Config.NPCVendors or {}) do
+    if vendor and vendor.name == "Cop Store" and vendor.location and vendor.items then
+        copStoreTemplate = vendor
+        break
+    end
+end
+
+if copStoreTemplate and type(Config.PoliceDepartments) == "table" then
+    copStoreTemplate.id = copStoreTemplate.id or "cop_store_lvpd"
+
+    for _, department in ipairs(Config.PoliceDepartments) do
+        local copStoreLocation = department and department.copStore
+        if copStoreLocation and not SameConfigLocation(copStoreLocation, copStoreTemplate.location) then
+            local vendorId = "cop_store_" .. tostring(department.id or department.name or #Config.NPCVendors + 1)
+            if not existingNpcVendorIds[vendorId] then
+                table.insert(Config.NPCVendors, {
+                    id = vendorId,
+                    departmentId = department.id,
+                    location = copStoreLocation,
+                    model = copStoreTemplate.model or "s_m_y_cop_01",
+                    name = "Cop Store",
+                    storeType = "cop",
+                    items = copStoreTemplate.items
+                })
+                existingNpcVendorIds[vendorId] = true
+            end
+        end
     end
 end
 

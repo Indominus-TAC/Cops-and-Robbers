@@ -1410,8 +1410,8 @@ function CloseCharacterEditor(save)
     SetEntityVisible(ped, true, false)
     SetEntityAlpha(ped, 255, false)
     
-    if currentRole and Config.SpawnPoints and Config.SpawnPoints[currentRole] then
-        local spawnPoint = Config.SpawnPoints[currentRole]
+    if currentRole then
+        local spawnPoint = select(1, GetRoleSpawnEntry(currentRole))
         local spawnCoords = GetEntryCoords(spawnPoint)
         if spawnCoords then
             SetEntityCoords(ped, spawnCoords.x, spawnCoords.y, spawnCoords.z, false, false, false, true)
@@ -1713,16 +1713,204 @@ local function ClearStoreHelpText()
     end
 end
 
+local function CopyTextToClipboard(text, successMessage)
+    if not text or text == "" then
+        return false
+    end
+
+    SendNUIMessage({
+        action = 'copyToClipboard',
+        text = text,
+        successMessage = successMessage or "Copied to clipboard."
+    })
+
+    return true
+end
+
+local function BuildPlayerCoordsClipboardText(playerPed)
+    if not playerPed or playerPed == 0 then
+        return nil
+    end
+
+    local coords = GetEntityCoords(playerPed)
+    local heading = GetEntityHeading(playerPed)
+    if not coords then
+        return nil
+    end
+
+    return string.format("vector4(%.2f, %.2f, %.2f, %.2f)", coords.x, coords.y, coords.z, heading)
+end
+
+local function GetPoliceDepartments()
+    if Config and type(Config.PoliceDepartments) == "table" then
+        return Config.PoliceDepartments
+    end
+
+    return {}
+end
+
+local function BuildMergedPdGarageConfig(baseGarage, department)
+    local base = baseGarage or {}
+    local overrideGarage = department and department.garage or nil
+    if type(overrideGarage) ~= "table" then
+        return base
+    end
+
+    local merged = {}
+    for key, value in pairs(base) do
+        merged[key] = value
+    end
+
+    for key, value in pairs(overrideGarage) do
+        if key ~= "interaction" then
+            merged[key] = value
+        end
+    end
+
+    local mergedInteraction = {}
+    if type(base.interaction) == "table" then
+        for key, value in pairs(base.interaction) do
+            mergedInteraction[key] = value
+        end
+    end
+    if type(overrideGarage.interaction) == "table" then
+        for key, value in pairs(overrideGarage.interaction) do
+            mergedInteraction[key] = value
+        end
+    end
+    if next(mergedInteraction) then
+        merged.interaction = mergedInteraction
+    end
+
+    merged.departmentId = department and department.id or merged.departmentId
+    merged.departmentName = department and department.name or merged.departmentName
+    merged.title = merged.title or (department and department.name and (department.name .. " Garage")) or "PD Garage"
+    return merged
+end
+
+local function GetRandomPoliceDepartment()
+    local departments = GetPoliceDepartments()
+    if #departments <= 0 then
+        return nil
+    end
+
+    return departments[math.random(1, #departments)]
+end
+
+local function GetRoleSpawnEntry(roleName)
+    if roleName == "cop" then
+        local department = GetRandomPoliceDepartment()
+        if department and department.respawn then
+            return department.respawn, department
+        end
+    end
+
+    if Config and Config.SpawnPoints then
+        return Config.SpawnPoints[roleName], nil
+    end
+
+    return nil, nil
+end
+
+local function GetNearestPoliceDepartment(originCoords, requireGarage)
+    local departments = GetPoliceDepartments()
+    if #departments <= 0 then
+        return nil
+    end
+
+    local searchOrigin = originCoords
+    if not searchOrigin then
+        local playerPed = PlayerPedId()
+        if playerPed and playerPed ~= 0 then
+            searchOrigin = GetEntityCoords(playerPed)
+        end
+    end
+
+    if not searchOrigin then
+        return departments[1]
+    end
+
+    local nearestDepartment = nil
+    local nearestDistance = math.huge
+
+    for _, department in ipairs(departments) do
+        local candidateEntry = nil
+        if requireGarage then
+            local garageInteraction = department.garage and department.garage.interaction
+            candidateEntry = garageInteraction and garageInteraction.location or nil
+        end
+
+        candidateEntry = candidateEntry or department.respawn or department.copStore
+        local candidateCoords = GetEntryCoords(candidateEntry)
+        if candidateCoords then
+            local distance = #(searchOrigin - candidateCoords)
+            if distance < nearestDistance then
+                nearestDistance = distance
+                nearestDepartment = department
+            end
+        end
+    end
+
+    return nearestDepartment or departments[1]
+end
+
+local function GetResolvedPdGarageContext(originCoords)
+    local baseGarage = Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled and Config.PDGarage or nil
+    if not baseGarage then
+        return nil
+    end
+
+    local department = GetNearestPoliceDepartment(originCoords, true)
+    local garage = BuildMergedPdGarageConfig(baseGarage, department)
+    if not garage or not garage.enabled then
+        return nil
+    end
+
+    return {
+        department = department,
+        garage = garage
+    }
+end
+
+local function GetAllResolvedPdGarageContexts()
+    local baseGarage = Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled and Config.PDGarage or nil
+    if not baseGarage then
+        return {}
+    end
+
+    local departments = GetPoliceDepartments()
+    if #departments <= 0 then
+        return {
+            {
+                department = nil,
+                garage = baseGarage
+            }
+        }
+    end
+
+    local contexts = {}
+    for _, department in ipairs(departments) do
+        contexts[#contexts + 1] = {
+            department = department,
+            garage = BuildMergedPdGarageConfig(baseGarage, department)
+        }
+    end
+
+    return contexts
+end
+
 local function GetPdGarageConfig()
-    if Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled then
-        return Config.PDGarage
+    local context = GetResolvedPdGarageContext()
+    if context then
+        return context.garage
     end
 
     return nil
 end
 
 local function GetPdGarageInteractionLocation()
-    local garage = GetPdGarageConfig()
+    local context = GetResolvedPdGarageContext()
+    local garage = context and context.garage or nil
     if garage and garage.interaction then
         return garage.interaction.location
     end
@@ -2590,6 +2778,37 @@ RegisterCommand('equipweapns', function()
     end
 end, false)
 
+RegisterCommand('coords', function()
+    local playerPed = PlayerPedId()
+    if not playerPed or playerPed == 0 then
+        TriggerEvent('chat:addMessage', {
+            color = {255, 80, 80},
+            args = {"Coords", "Could not read your current position."}
+        })
+        return
+    end
+
+    local clipboardText = BuildPlayerCoordsClipboardText(playerPed)
+    if not clipboardText then
+        TriggerEvent('chat:addMessage', {
+            color = {255, 80, 80},
+            args = {"Coords", "Could not format your current position."}
+        })
+        return
+    end
+
+    CopyTextToClipboard(clipboardText, "Current coordinates copied to clipboard.")
+
+    TriggerEvent('chat:addMessage', {
+        color = {80, 170, 255},
+        multiline = true,
+        args = {
+            "Coords",
+            string.format("%s | Paste that directly for map placement help.", clipboardText)
+        }
+    })
+end, false)
+
 -- =====================================
 --       WANTED LEVEL DETECTION SYSTEM
 -- =====================================
@@ -3172,51 +3391,41 @@ end
 
 -- Helper to spawn the Cop Store ped and protect it from suppression
 function SpawnCopStorePed()
-    -- Check if already spawned
-    if g_spawnedNPCs["CopStore"] then
+    if not Config or not Config.NPCVendors then
+        Log("Cop Store vendors not found in Config.NPCVendors", "error", "CNR_CLIENT")
         return
     end
 
-    local vendor = nil
-    if Config and Config.NPCVendors then
-        for _, v in ipairs(Config.NPCVendors) do
-            if v.name == "Cop Store" then
-                vendor = v
-                break
+    for _, vendor in ipairs(Config.NPCVendors) do
+        if vendor and vendor.name == "Cop Store" and vendor.location then
+            local spawnKey = GetVendorIdentityKey(vendor)
+            if spawnKey and not g_spawnedNPCs[spawnKey] then
+                local model = GetHashKey(vendor.model or "s_m_m_ciasec_01")
+                RequestModel(model)
+                while not HasModelLoaded(model) do Citizen.Wait(10) end
+
+                local x, y, z, heading
+                if vendor.location.w then
+                    x, y, z, heading = vendor.location.x, vendor.location.y, vendor.location.z, vendor.location.w
+                else
+                    x, y, z = vendor.location.x, vendor.location.y, vendor.location.z
+                    heading = vendor.heading or 0.0
+                end
+
+                local ped = CreatePed(4, model, x, y, z - 1.0, heading, false, true)
+                SetEntityAsMissionEntity(ped, true, true)
+                SetBlockingOfNonTemporaryEvents(ped, true)
+                SetPedFleeAttributes(ped, 0, false)
+                SetPedCombatAttributes(ped, 17, true)
+                SetPedCanRagdoll(ped, false)
+                SetPedDiesWhenInjured(ped, false)
+                SetEntityInvincible(ped, true)
+                FreezeEntityPosition(ped, true)
+                g_protectedPolicePeds[ped] = true
+                g_spawnedNPCs[spawnKey] = ped
             end
         end
     end
-    if not vendor then
-        Log("Cop Store vendor not found in Config.NPCVendors", "error", "CNR_CLIENT")
-        return
-    end
-
-    local model = GetHashKey("s_m_m_ciasec_01") -- Use a unique cop-like model not used by NPC police
-    RequestModel(model)
-    while not HasModelLoaded(model) do Citizen.Wait(10) end
-
-    -- Handle both vector3 and vector4 formats for location
-    local x, y, z, heading
-    if vendor.location.w then
-        -- vector4 format
-        x, y, z, heading = vendor.location.x, vendor.location.y, vendor.location.z, vendor.location.w
-    else
-        -- vector3 format with separate heading
-        x, y, z = vendor.location.x, vendor.location.y, vendor.location.z
-        heading = vendor.heading or 0.0
-    end
-
-    local ped = CreatePed(4, model, x, y, z - 1.0, heading, false, true)
-    SetEntityAsMissionEntity(ped, true, true)
-    SetBlockingOfNonTemporaryEvents(ped, true)
-    SetPedFleeAttributes(ped, 0, false) -- Corrected: use boolean false
-    SetPedCombatAttributes(ped, 17, true) -- Corrected: use boolean true
-    SetPedCanRagdoll(ped, false)
-    SetPedDiesWhenInjured(ped, false)
-    SetEntityInvincible(ped, true)
-    FreezeEntityPosition(ped, true)
-    g_protectedPolicePeds[ped] = true
-    g_spawnedNPCs["CopStore"] = ped
 end
 
 -- Helper to spawn Robber Store peds and protect them from suppression
@@ -3452,8 +3661,8 @@ function SpawnPoliceVehicles()
 end
 
 local function CleanupLegacyPoliceVehiclesNearPdGarage()
-    local garage = GetPdGarageConfig()
-    if not garage or type(GetGamePool) ~= "function" then
+    local garages = GetAllResolvedPdGarageContexts()
+    if #garages == 0 or type(GetGamePool) ~= "function" then
         return
     end
 
@@ -3468,10 +3677,6 @@ local function CleanupLegacyPoliceVehiclesNearPdGarage()
             policeModelHashes[GetHashKey(modelName)] = true
         end
     end
-
-    local bayRadius = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.55, 2.25)
-    local bayRadiusSq = bayRadius * bayRadius
-    local verticalTolerance = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.5, 2.5)
 
     for _, vehicle in ipairs(GetGamePool('CVehicle') or {}) do
         if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) and policeModelHashes[GetEntityModel(vehicle)] then
@@ -3504,15 +3709,22 @@ local function CleanupLegacyPoliceVehiclesNearPdGarage()
 
             if not hasPlayerOccupant then
                 local vehicleCoords = GetEntityCoords(vehicle)
-                for _, spawnPoint in ipairs(garage.spawnPoints or {}) do
-                    local spawnCoords = GetEntryCoords(spawnPoint)
-                    if spawnCoords and math.abs(vehicleCoords.z - spawnCoords.z) <= verticalTolerance then
-                        local dx = vehicleCoords.x - spawnCoords.x
-                        local dy = vehicleCoords.y - spawnCoords.y
-                        if ((dx * dx) + (dy * dy)) <= bayRadiusSq then
-                            SetEntityAsMissionEntity(vehicle, true, true)
-                            DeleteVehicle(vehicle)
-                            break
+                for _, garageContext in ipairs(garages) do
+                    local garage = garageContext.garage
+                    local garageBayRadius = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.55, 2.25)
+                    local garageBayRadiusSq = garageBayRadius * garageBayRadius
+                    local garageVerticalTolerance = math.max((tonumber(garage.spawnClearRadius) or 4.0) * 0.5, 2.5)
+
+                    for _, spawnPoint in ipairs(garage.spawnPoints or {}) do
+                        local spawnCoords = GetEntryCoords(spawnPoint)
+                        if spawnCoords and math.abs(vehicleCoords.z - spawnCoords.z) <= garageVerticalTolerance then
+                            local dx = vehicleCoords.x - spawnCoords.x
+                            local dy = vehicleCoords.y - spawnCoords.y
+                            if ((dx * dx) + (dy * dy)) <= garageBayRadiusSq then
+                                SetEntityAsMissionEntity(vehicle, true, true)
+                                DeleteVehicle(vehicle)
+                                break
+                            end
                         end
                     end
                 end
@@ -3524,70 +3736,79 @@ local function CleanupLegacyPoliceVehiclesNearPdGarage()
 end
 
 local function GetPdGarageSpawnBounds(padding)
-    local garage = GetPdGarageConfig()
-    if not garage or type(garage.spawnPoints) ~= "table" or #garage.spawnPoints == 0 then
+    local garageContexts = GetAllResolvedPdGarageContexts()
+    if #garageContexts == 0 then
         return nil
     end
 
     local extraPadding = tonumber(padding) or 16.0
-    local minX, minY, minZ = nil, nil, nil
-    local maxX, maxY, maxZ = nil, nil, nil
+    local boundsList = {}
 
-    for _, spawnPoint in ipairs(garage.spawnPoints) do
-        local coords = GetEntryCoords(spawnPoint)
-        if coords then
-            minX = minX and math.min(minX, coords.x) or coords.x
-            minY = minY and math.min(minY, coords.y) or coords.y
-            minZ = minZ and math.min(minZ, coords.z) or coords.z
-            maxX = maxX and math.max(maxX, coords.x) or coords.x
-            maxY = maxY and math.max(maxY, coords.y) or coords.y
-            maxZ = maxZ and math.max(maxZ, coords.z) or coords.z
+    for _, garageContext in ipairs(garageContexts) do
+        local minX, minY, minZ = nil, nil, nil
+        local maxX, maxY, maxZ = nil, nil, nil
+        for _, spawnPoint in ipairs(garageContext.garage.spawnPoints or {}) do
+            local coords = GetEntryCoords(spawnPoint)
+            if coords then
+                minX = minX and math.min(minX, coords.x) or coords.x
+                minY = minY and math.min(minY, coords.y) or coords.y
+                minZ = minZ and math.min(minZ, coords.z) or coords.z
+                maxX = maxX and math.max(maxX, coords.x) or coords.x
+                maxY = maxY and math.max(maxY, coords.y) or coords.y
+                maxZ = maxZ and math.max(maxZ, coords.z) or coords.z
+            end
+        end
+
+        if minX then
+            boundsList[#boundsList + 1] = {
+                minX = minX - extraPadding,
+                minY = minY - extraPadding,
+                minZ = minZ - 4.0,
+                maxX = maxX + extraPadding,
+                maxY = maxY + extraPadding,
+                maxZ = maxZ + 6.0
+            }
         end
     end
 
-    if not minX then
+    if #boundsList == 0 then
         return nil
     end
 
-    return {
-        minX = minX - extraPadding,
-        minY = minY - extraPadding,
-        minZ = minZ - 4.0,
-        maxX = maxX + extraPadding,
-        maxY = maxY + extraPadding,
-        maxZ = maxZ + 6.0
-    }
+    return boundsList
 end
 
 local function SuppressPdGarageAmbientVehicleSpawns()
-    local bounds = GetPdGarageSpawnBounds()
-    if not bounds then
+    local boundsList = GetPdGarageSpawnBounds()
+    if not boundsList then
         return
     end
 
-    if type(SetAllVehicleGeneratorsActiveInArea) == "function" then
-        SetAllVehicleGeneratorsActiveInArea(
-            bounds.minX,
-            bounds.minY,
-            bounds.minZ,
-            bounds.maxX,
-            bounds.maxY,
-            bounds.maxZ,
-            false,
-            false
-        )
-    end
+    for _, bounds in ipairs(boundsList) do
+        if type(SetAllVehicleGeneratorsActiveInArea) == "function" then
+            SetAllVehicleGeneratorsActiveInArea(
+                bounds.minX,
+                bounds.minY,
+                bounds.minZ,
+                bounds.maxX,
+                bounds.maxY,
+                bounds.maxZ,
+                false,
+                false
+            )
+        end
 
-    if type(RemoveVehiclesFromGeneratorsInArea) == "function" then
-        RemoveVehiclesFromGeneratorsInArea(
-            bounds.minX,
-            bounds.minY,
-            bounds.minZ,
-            bounds.maxX,
-            bounds.maxY,
-            bounds.maxZ,
-            false
-        )
+        if type(RemoveVehiclesFromGeneratorsInArea) == "function" then
+            RemoveVehiclesFromGeneratorsInArea(
+                bounds.minX,
+                bounds.minY,
+                bounds.minZ,
+                bounds.maxX,
+                bounds.maxY,
+                bounds.maxZ,
+                false
+            )
+        end
     end
 
     CleanupLegacyPoliceVehiclesNearPdGarage()
@@ -3654,7 +3875,7 @@ AddEventHandler('playerSpawned', function()
         end)
     else
         -- Player already has a role, respawn them at their role's spawn point
-        local spawnPoint = Config.SpawnPoints[role]
+        local spawnPoint = select(1, GetRoleSpawnEntry(role))
         local spawnCoords = GetEntryCoords(spawnPoint)
         if spawnCoords then
             local playerPed = PlayerPedId()
@@ -5261,8 +5482,8 @@ AddEventHandler('cnr:releaseFromJail', function()
     local determinedReleaseLocation = nil
     local hardcodedDefaultSpawn = vector3(186.0, -946.0, 30.0) -- Legion Square, a very safe fallback
 
-    if playerData and playerData.role and Config.SpawnPoints and Config.SpawnPoints[playerData.role] then
-        determinedReleaseLocation = Config.SpawnPoints[playerData.role]
+    if playerData and playerData.role then
+        determinedReleaseLocation = select(1, GetRoleSpawnEntry(playerData.role))
         Log(string.format("Using spawn point for role '%s'.", playerData.role), "info", "CNR_CLIENT")
     elseif Config.SpawnPoints and Config.SpawnPoints["citizen"] then
         determinedReleaseLocation = Config.SpawnPoints["citizen"]
@@ -5272,9 +5493,11 @@ AddEventHandler('cnr:releaseFromJail', function()
         determinedReleaseLocation = hardcodedDefaultSpawn
         Log("Citizen spawn point also not found in Config. Using hardcoded default spawn.", "error", "CNR_CLIENT")
         ShowNotification("~r~Error: Default spawn locations not configured. Using a fallback location.")
-    end    if determinedReleaseLocation and determinedReleaseLocation.x and determinedReleaseLocation.y and determinedReleaseLocation.z then
-        SetEntityCoords(playerPed, determinedReleaseLocation.x, determinedReleaseLocation.y, determinedReleaseLocation.z, false, false, false, true)
-        SetEntityHeading(playerPed, 0.0) -- Set default heading since spawn points don't include rotation
+    end
+
+    if determinedReleaseLocation and determinedReleaseLocation.x and determinedReleaseLocation.y and determinedReleaseLocation.z then
+        local releaseHeading = GetEntryHeading(determinedReleaseLocation, 0.0)
+        TeleportPlayerToEntry(playerPed, determinedReleaseLocation, releaseHeading)
         Log(string.format("Player released from jail. Teleported to: %s", json.encode(determinedReleaseLocation)), "info", "CNR_CLIENT")
     else
         -- This case should be rare given the fallbacks, but as a last resort:
@@ -5340,19 +5563,37 @@ function UpdateActivityBlips()
         end
     end
 
-    local policeStationCoords = Config.SpawnPoints and Config.SpawnPoints.cop
-    if policeStationCoords then
-        local stationCoords = GetEntryCoords(policeStationCoords) or policeStationCoords
-        if stationCoords and stationCoords.x and stationCoords.y and stationCoords.z then
-            local blip = AddBlipForCoord(stationCoords.x, stationCoords.y, stationCoords.z)
-            SetBlipSprite(blip, 60)
-            SetBlipColour(blip, 38)
-            SetBlipScale(blip, 0.85)
-            SetBlipAsShortRange(blip, true)
-            BeginTextCommandSetBlipName("STRING")
-            AddTextComponentString("Police Station")
-            EndTextCommandSetBlipName(blip)
-            table.insert(activityBlips.policeStations, blip)
+    local departments = GetPoliceDepartments()
+    if #departments > 0 then
+        for _, department in ipairs(departments) do
+            local stationCoords = GetEntryCoords(department.respawn or department.copStore)
+            if stationCoords and stationCoords.x and stationCoords.y and stationCoords.z then
+                local blip = AddBlipForCoord(stationCoords.x, stationCoords.y, stationCoords.z)
+                SetBlipSprite(blip, 60)
+                SetBlipColour(blip, 38)
+                SetBlipScale(blip, 0.85)
+                SetBlipAsShortRange(blip, true)
+                BeginTextCommandSetBlipName("STRING")
+                AddTextComponentString(department.name or "Police Station")
+                EndTextCommandSetBlipName(blip)
+                table.insert(activityBlips.policeStations, blip)
+            end
+        end
+    else
+        local policeStationCoords = Config.SpawnPoints and Config.SpawnPoints.cop
+        if policeStationCoords then
+            local stationCoords = GetEntryCoords(policeStationCoords) or policeStationCoords
+            if stationCoords and stationCoords.x and stationCoords.y and stationCoords.z then
+                local blip = AddBlipForCoord(stationCoords.x, stationCoords.y, stationCoords.z)
+                SetBlipSprite(blip, 60)
+                SetBlipColour(blip, 38)
+                SetBlipScale(blip, 0.85)
+                SetBlipAsShortRange(blip, true)
+                BeginTextCommandSetBlipName("STRING")
+                AddTextComponentString("Police Station")
+                EndTextCommandSetBlipName(blip)
+                table.insert(activityBlips.policeStations, blip)
+            end
         end
     end
 
