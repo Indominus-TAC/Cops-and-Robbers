@@ -35,7 +35,7 @@ client_scripts {
     'client_support_clipboard.lua', -- Clipboard / debug coordinate helpers.
     'client_support_police.lua', -- Police department spawn and PD garage helpers.
     'client.lua',        -- Core client logic with consolidated systems (inventory, character editor, progression).
-    'client_police_els.lua', -- FiveM-native ELS-style emergency lighting controller for police vehicles.
+    'client_police_els.lua', -- Simple synced police light/siren controller for stock police vehicles.
     'pvp_enable.lua',    -- Enables PvP on the server.
 }
 

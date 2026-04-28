@@ -76,36 +76,16 @@ Config.PoliceVehicles   = {
 }
 Config.CivilianVehicles = { "sultan", "futo", "blista", "banshee", "elegy2", "stratum", "issi2", "prairie" }
 
--- FiveM-native emergency lighting controller modeled after classic ELS concepts.
--- This provides synced light stages, extras-based flashing, takedowns, and scene
--- lights without relying on single-player ScriptHook/ASI binaries.
+-- Simple synced police light/siren controller for stock GTA V police vehicles.
 Config.PoliceELS = {
     enabled = true,
     allowEmergencyClassFallback = true,
     showEntryHint = true,
     stateBagKey = "cnrEls",
     keybinds = {
-        stageCycleKey = "J",
-        sirenToggleKey = "L",
-        warningToggleKey = "O",
-        secondaryToggleKey = "P",
-        patternCycleKey = "U",
-        takedownToggleKey = "RBRACKET",
-        sceneToggleKey = "N"
-    },
-    defaultProfile = {
-        useNativeEmergencyLights = true,
-        useManualSirenAudio = false,
-        allowSecondaryAtStage2 = false,
-        cruiseExtras = {},
-        primaryExtras = {},
-        warningExtras = {},
-        secondaryExtras = {},
-        takedownExtras = {},
-        sceneExtras = {},
-        flashIntervals = { 240, 150, 95 }
-    },
-    vehicleProfiles = {}
+        lightsToggleKey = "J",
+        sirenToggleKey = "L"
+    }
 }
 
 

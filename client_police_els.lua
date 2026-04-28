@@ -1,13 +1,11 @@
--- FiveM-native police ELS controller.
--- This reproduces the key ideas of classic ELS for multiplayer police vehicles
--- without relying on single-player ScriptHook/ASI binaries.
+-- Simple FiveM-native police emergency lighting controller.
+-- This resource only targets stock police vehicles and keeps controls to
+-- a synced light toggle plus a synced siren toggle.
 
 local bridge = _G.CNRPoliceElsBridge or {}
 local localPoliceElsFallbackState = {}
-local policeElsProfileCache = {}
 local policeElsAllowedModelNames = nil
 local policeElsAllowedModelHashes = nil
-local policeElsRuntimeState = {}
 local lastPoliceElsHintVehicle = 0
 
 local function Notify(message)
@@ -57,22 +55,6 @@ local function CloneShallowTable(source)
     return copy
 end
 
-local function CloneNumericList(source)
-    local result = {}
-    if type(source) ~= "table" then
-        return result
-    end
-
-    for _, value in ipairs(source) do
-        local numericValue = tonumber(value)
-        if numericValue and numericValue >= 1 then
-            result[#result + 1] = math.floor(numericValue)
-        end
-    end
-
-    return result
-end
-
 local function BuildPoliceElsModelLookups()
     if policeElsAllowedModelNames and policeElsAllowedModelHashes then
         return
@@ -81,91 +63,38 @@ local function BuildPoliceElsModelLookups()
     policeElsAllowedModelNames = {}
     policeElsAllowedModelHashes = {}
 
-    local function registerModel(modelName)
-        if type(modelName) ~= "string" then
-            return
-        end
-
-        local normalized = string.lower(modelName)
-        if normalized == "" or policeElsAllowedModelNames[normalized] then
-            return
-        end
-
-        policeElsAllowedModelNames[normalized] = true
-        policeElsAllowedModelHashes[GetHashKey(normalized)] = normalized
-    end
-
     for _, modelName in ipairs(Config.PoliceVehicles or {}) do
-        registerModel(modelName)
-    end
-
-    local elsConfig = GetPoliceElsConfig()
-    if elsConfig and type(elsConfig.vehicleProfiles) == "table" then
-        for modelName, _ in pairs(elsConfig.vehicleProfiles) do
-            registerModel(modelName)
+        if type(modelName) == "string" then
+            local normalized = string.lower(modelName)
+            if normalized ~= "" and not policeElsAllowedModelNames[normalized] then
+                policeElsAllowedModelNames[normalized] = true
+                policeElsAllowedModelHashes[GetHashKey(normalized)] = normalized
+            end
         end
     end
 end
 
-local function ResolvePoliceElsModelName(vehicle)
-    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
-        return nil
+local function SupportsPoliceEls(vehicle)
+    local elsConfig = GetPoliceElsConfig()
+    if not elsConfig or not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
+        return false
     end
 
     local trackedData = GetTrackedPdGarageVehicle(vehicle)
     if trackedData and trackedData.model then
         local trackedModel = string.lower(tostring(trackedData.model))
         if trackedModel ~= "" then
-            return trackedModel
+            BuildPoliceElsModelLookups()
+            return policeElsAllowedModelNames[trackedModel] == true
         end
     end
 
     BuildPoliceElsModelLookups()
-    return policeElsAllowedModelHashes[GetEntityModel(vehicle)]
-end
-
-local function GetPoliceElsProfile(vehicle)
-    local elsConfig = GetPoliceElsConfig()
-    if not elsConfig or not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
-        return nil
+    if policeElsAllowedModelHashes[GetEntityModel(vehicle)] then
+        return true
     end
 
-    local modelName = ResolvePoliceElsModelName(vehicle)
-    if not modelName then
-        local isEmergencyFallback = elsConfig.allowEmergencyClassFallback == true and GetVehicleClass(vehicle) == 18
-        if not isEmergencyFallback then
-            return nil
-        end
-        modelName = "__emergency_fallback__"
-    end
-
-    if policeElsProfileCache[modelName] then
-        return policeElsProfileCache[modelName]
-    end
-
-    local baseProfile = CloneShallowTable(elsConfig.defaultProfile)
-    local override = type(elsConfig.vehicleProfiles) == "table" and elsConfig.vehicleProfiles[modelName] or nil
-    if type(override) == "table" then
-        for key, value in pairs(override) do
-            baseProfile[key] = value
-        end
-    end
-
-    baseProfile.modelName = modelName
-    baseProfile.cruiseExtras = CloneNumericList(baseProfile.cruiseExtras)
-    baseProfile.primaryExtras = CloneNumericList(baseProfile.primaryExtras)
-    baseProfile.warningExtras = CloneNumericList(baseProfile.warningExtras)
-    baseProfile.secondaryExtras = CloneNumericList(baseProfile.secondaryExtras)
-    baseProfile.takedownExtras = CloneNumericList(baseProfile.takedownExtras)
-    baseProfile.sceneExtras = CloneNumericList(baseProfile.sceneExtras)
-    baseProfile.flashIntervals = CloneNumericList(baseProfile.flashIntervals)
-
-    if #baseProfile.flashIntervals <= 0 then
-        baseProfile.flashIntervals = { 240, 150, 95 }
-    end
-
-    policeElsProfileCache[modelName] = baseProfile
-    return baseProfile
+    return elsConfig.allowEmergencyClassFallback == true and GetVehicleClass(vehicle) == 18
 end
 
 local function GetPoliceElsStateKey()
@@ -176,29 +105,26 @@ end
 local function SanitizePoliceElsState(state)
     local sanitized = {
         stage = 0,
-        siren = false,
-        warning = true,
-        secondary = true,
-        takedown = false,
-        scene = false,
-        pattern = 1
+        siren = false
     }
 
     if type(state) == "table" then
-        sanitized.stage = math.max(0, math.min(3, math.floor(tonumber(state.stage) or 0)))
+        sanitized.stage = (tonumber(state.stage) or 0) > 0 and 1 or 0
         sanitized.siren = state.siren == true
-        sanitized.warning = state.warning ~= false
-        sanitized.secondary = state.secondary ~= false
-        sanitized.takedown = state.takedown == true
-        sanitized.scene = state.scene == true
-        sanitized.pattern = math.max(1, math.min(3, math.floor(tonumber(state.pattern) or 1)))
     end
 
-    if sanitized.stage < 3 then
+    if sanitized.stage == 0 then
         sanitized.siren = false
     end
 
     return sanitized
+end
+
+local function ArePoliceElsStatesEqual(left, right)
+    left = SanitizePoliceElsState(left)
+    right = SanitizePoliceElsState(right)
+
+    return left.stage == right.stage and left.siren == right.siren
 end
 
 local function GetRawPoliceElsState(vehicle)
@@ -249,25 +175,24 @@ end
 
 local function GetLocalPoliceElsVehicle()
     if not CanUsePoliceEls() or IsElsInputBlocked() then
-        return nil, nil
+        return nil
     end
 
     local playerPed = PlayerPedId()
     if not playerPed or playerPed == 0 or not IsPedInAnyVehicle(playerPed, false) then
-        return nil, nil
+        return nil
     end
 
     local vehicle = GetVehiclePedIsIn(playerPed, false)
     if vehicle == 0 or GetPedInVehicleSeat(vehicle, -1) ~= playerPed then
-        return nil, nil
+        return nil
     end
 
-    local profile = GetPoliceElsProfile(vehicle)
-    if not profile then
-        return nil, nil
+    if not SupportsPoliceEls(vehicle) then
+        return nil
     end
 
-    return vehicle, profile
+    return vehicle
 end
 
 local function SetVehicleExtraSafe(vehicle, extraId, enabled)
@@ -287,44 +212,10 @@ local function SetVehicleExtraSafe(vehicle, extraId, enabled)
     SetVehicleExtra(vehicle, numericExtra, enabled and 0 or 1)
 end
 
-local function SetVehicleExtraGroupState(vehicle, extras, isEnabled)
-    for _, extraId in ipairs(extras or {}) do
-        SetVehicleExtraSafe(vehicle, extraId, isEnabled)
+local function SetAllVehicleExtrasDisabled(vehicle)
+    for extraId = 1, 14 do
+        SetVehicleExtraSafe(vehicle, extraId, false)
     end
-end
-
-local function ProfileUsesExtraLighting(profile)
-    if not profile then
-        return false
-    end
-
-    local groups = {
-        profile.cruiseExtras,
-        profile.primaryExtras,
-        profile.warningExtras,
-        profile.secondaryExtras,
-        profile.takedownExtras,
-        profile.sceneExtras
-    }
-
-    for _, extras in ipairs(groups) do
-        if type(extras) == "table" and #extras > 0 then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function GetPoliceElsRuntime(vehicle)
-    local runtime = policeElsRuntimeState[vehicle]
-    if runtime then
-        return runtime
-    end
-
-    runtime = {}
-    policeElsRuntimeState[vehicle] = runtime
-    return runtime
 end
 
 local function SetVehicleIndicatorState(vehicle, leftEnabled, rightEnabled)
@@ -336,181 +227,60 @@ local function SetVehicleIndicatorState(vehicle, leftEnabled, rightEnabled)
     SetVehicleIndicatorLights(vehicle, 1, leftEnabled == true)
 end
 
-local function GetGenericPoliceElsOverlayState(profile, state, phase)
-    local overlay = {
-        leftIndicator = false,
-        rightIndicator = false,
-        fullbeam = state.takedown == true
-    }
-
-    local warningActive = state.stage >= 2 and state.warning
-    local secondaryActive = (state.stage >= 3 and state.secondary) or (
-        state.stage == 2 and state.secondary and profile.allowSecondaryAtStage2 == true
-    )
-
-    if warningActive then
-        if state.pattern == 2 then
-            overlay.leftIndicator = phase == 0 or phase == 2
-            overlay.rightIndicator = phase == 1 or phase == 3
-        elseif state.pattern == 3 then
-            overlay.leftIndicator = phase ~= 1
-            overlay.rightIndicator = phase == 1 or phase == 2
-        else
-            overlay.leftIndicator = phase < 2
-            overlay.rightIndicator = phase >= 2
-        end
-    end
-
-    if secondaryActive then
-        if state.pattern == 2 then
-            overlay.fullbeam = overlay.fullbeam or phase == 0 or phase == 3
-        elseif state.pattern == 3 then
-            overlay.fullbeam = overlay.fullbeam or phase ~= 2
-        else
-            overlay.fullbeam = overlay.fullbeam or (phase % 2) == 0
-        end
-    end
-
-    return overlay
-end
-
-local function ShouldPoliceElsPatternLight(index, count, pattern, phase)
-    if count <= 0 then
-        return false
-    end
-
-    if pattern == 2 then
-        local split = math.max(1, math.ceil(count / 2))
-        if (phase % 4) < 2 then
-            return index <= split
-        end
-
-        return index > split
-    end
-
-    if pattern == 3 then
-        return phase == 0 or phase == 1
-    end
-
-    return ((index + phase) % 2) == 0
-end
-
-local function ApplyPoliceElsFlashingGroup(vehicle, extras, pattern, phase, enabled)
-    if not enabled then
-        SetVehicleExtraGroupState(vehicle, extras, false)
-        return
-    end
-
-    local count = #extras
-    for index, extraId in ipairs(extras) do
-        SetVehicleExtraSafe(vehicle, extraId, ShouldPoliceElsPatternLight(index, count, pattern, phase))
-    end
-end
-
-local function ApplyPoliceElsStateToVehicle(vehicle, profile, state, now)
-    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) or not profile then
+local function ApplyPoliceElsStateToVehicle(vehicle, state)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
         return
     end
 
     state = SanitizePoliceElsState(state)
 
-    local interval = profile.flashIntervals[state.pattern] or profile.flashIntervals[#profile.flashIntervals] or 150
-    if state.stage >= 3 then
-        interval = math.max(75, interval - 25)
+    SetAllVehicleExtrasDisabled(vehicle)
+
+    local emergencyLightsActive = state.stage > 0
+    local sirenAudible = emergencyLightsActive and state.siren
+
+    SetVehicleSiren(vehicle, emergencyLightsActive)
+
+    if type(SetVehicleHasMutedSirens) == "function" then
+        SetVehicleHasMutedSirens(vehicle, not sirenAudible)
     end
 
-    local phase = math.floor((now or GetGameTimer()) / interval) % 4
-    local usesExtras = ProfileUsesExtraLighting(profile)
-    local runtime = GetPoliceElsRuntime(vehicle)
-    local emergencyLightsActive = state.stage >= 2
-    local sirenAudible = emergencyLightsActive and state.stage >= 3 and state.siren
-
-    if usesExtras then
-        ApplyPoliceElsFlashingGroup(vehicle, profile.primaryExtras, state.pattern, phase, emergencyLightsActive)
-        ApplyPoliceElsFlashingGroup(vehicle, profile.warningExtras, state.pattern, phase + 1, emergencyLightsActive and state.warning)
-        ApplyPoliceElsFlashingGroup(
-            vehicle,
-            profile.secondaryExtras,
-            state.pattern,
-            phase + 2,
-            (state.stage >= 3 and state.secondary) or (state.stage == 2 and state.secondary and profile.allowSecondaryAtStage2 == true)
-        )
-    else
-        SetVehicleExtraGroupState(vehicle, profile.primaryExtras, false)
-        SetVehicleExtraGroupState(vehicle, profile.warningExtras, false)
-        SetVehicleExtraGroupState(vehicle, profile.secondaryExtras, false)
-    end
-
-    SetVehicleExtraGroupState(vehicle, profile.cruiseExtras, state.stage == 1)
-    SetVehicleExtraGroupState(vehicle, profile.takedownExtras, state.takedown)
-    SetVehicleExtraGroupState(vehicle, profile.sceneExtras, state.scene)
-
-    if profile.useNativeEmergencyLights ~= false then
-        SetVehicleSiren(vehicle, emergencyLightsActive)
-        if type(SetVehicleHasMutedSirens) == "function" then
-            SetVehicleHasMutedSirens(vehicle, not sirenAudible)
-        end
-        if type(SetSirenWithNoDriver) == "function" then
-            SetSirenWithNoDriver(vehicle, emergencyLightsActive)
-        end
+    if type(SetSirenWithNoDriver) == "function" then
+        SetSirenWithNoDriver(vehicle, emergencyLightsActive)
     end
 
     if type(SetVehicleLights) == "function" then
-        SetVehicleLights(vehicle, (state.stage > 0 or state.takedown or state.scene) and 2 or 0)
+        SetVehicleLights(vehicle, emergencyLightsActive and 2 or 0)
     end
 
     if type(SetVehicleInteriorlight) == "function" then
-        SetVehicleInteriorlight(vehicle, state.scene)
+        SetVehicleInteriorlight(vehicle, false)
     end
 
-    if usesExtras then
-        SetVehicleIndicatorState(vehicle, false, false)
-        if type(SetVehicleFullbeam) == "function" then
-            SetVehicleFullbeam(vehicle, state.takedown)
-        end
-    else
-        local overlay = GetGenericPoliceElsOverlayState(profile, state, phase)
-        SetVehicleIndicatorState(vehicle, overlay.leftIndicator, overlay.rightIndicator)
-
-        if type(SetVehicleFullbeam) == "function" then
-            SetVehicleFullbeam(vehicle, overlay.fullbeam)
-        end
+    if type(SetVehicleFullbeam) == "function" then
+        SetVehicleFullbeam(vehicle, false)
     end
 
-    if sirenAudible and runtime.lastSirenAudible ~= true then
-        if type(TriggerSiren) == "function" then
-            TriggerSiren(vehicle)
-        elseif type(_TRIGGER_SIREN) == "function" then
-            _TRIGGER_SIREN(vehicle)
-        end
-    end
-
-    runtime.lastSirenAudible = sirenAudible
-end
-
-local function FormatPoliceElsStageLabel(stage)
-    if stage == 1 then
-        return "Cruise"
-    elseif stage == 2 then
-        return "Code 2"
-    elseif stage == 3 then
-        return "Code 3"
-    end
-
-    return "Off"
+    SetVehicleIndicatorState(vehicle, false, false)
 end
 
 local function UpdateLocalPoliceElsState(mutator, notificationText)
-    local vehicle, profile = GetLocalPoliceElsVehicle()
+    local vehicle = GetLocalPoliceElsVehicle()
     if not vehicle then
         return false
     end
 
-    local nextState = CloneShallowTable(GetPoliceElsState(vehicle))
-    mutator(nextState, profile)
+    local currentState = GetPoliceElsState(vehicle)
+    local nextState = CloneShallowTable(currentState)
+    mutator(nextState)
+
+    if ArePoliceElsStatesEqual(currentState, nextState) then
+        return false
+    end
+
     nextState = SetPoliceElsState(vehicle, nextState)
     if nextState and notificationText then
-        Notify("~b~ELS~s~ " .. notificationText(nextState, profile))
+        Notify("~b~ELS~s~ " .. notificationText(nextState))
     end
 
     return nextState ~= nil
@@ -522,10 +292,10 @@ local function ShowPoliceElsEntryHint()
         return
     end
 
-    local vehicle = select(1, GetLocalPoliceElsVehicle())
+    local vehicle = GetLocalPoliceElsVehicle()
     if vehicle and vehicle ~= lastPoliceElsHintVehicle then
         lastPoliceElsHintVehicle = vehicle
-        Notify("~b~ELS ready~s~ J stage | L siren | O warning | P secondary | U pattern | ] takedown | N scene")
+        Notify("~b~ELS ready~s~ J lights | L siren")
     elseif not vehicle then
         lastPoliceElsHintVehicle = 0
     end
@@ -537,17 +307,15 @@ Citizen.CreateThread(function()
         local elsConfig = GetPoliceElsConfig()
 
         if elsConfig and type(GetGamePool) == "function" then
-            local now = GetGameTimer()
-            local localVehicle = select(1, GetLocalPoliceElsVehicle())
+            local localVehicle = GetLocalPoliceElsVehicle()
 
             for _, vehicle in ipairs(GetGamePool('CVehicle') or {}) do
                 if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
                     local rawState = GetRawPoliceElsState(vehicle)
                     if rawState or vehicle == localVehicle then
-                        local profile = GetPoliceElsProfile(vehicle)
-                        if profile then
+                        if SupportsPoliceEls(vehicle) then
                             waitTime = 75
-                            ApplyPoliceElsStateToVehicle(vehicle, profile, rawState or GetPoliceElsState(vehicle), now)
+                            ApplyPoliceElsStateToVehicle(vehicle, rawState or GetPoliceElsState(vehicle))
                         end
                     end
                 end
@@ -562,27 +330,32 @@ end)
 
 RegisterCommand('+cnr_els_stagecycle', function()
     UpdateLocalPoliceElsState(function(state)
-        state.stage = (state.stage + 1) % 4
-        if state.stage < 3 then
+        if state.stage > 0 then
+            state.stage = 0
             state.siren = false
+        else
+            state.stage = 1
         end
     end, function(state)
-        return ("Stage %s"):format(FormatPoliceElsStageLabel(state.stage))
+        return state.stage > 0 and "Emergency lights enabled" or "Emergency lights disabled"
     end)
 end, false)
 RegisterCommand('-cnr_els_stagecycle', function() end, false)
 RegisterKeyMapping(
     '+cnr_els_stagecycle',
-    'Police ELS - Cycle lighting stage',
+    'Police lights - Toggle emergency lights',
     'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.stageCycleKey) or 'J'
+    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.lightsToggleKey)
+        or (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.stageCycleKey)
+        or 'J'
 )
 
 RegisterCommand('+cnr_els_siren', function()
     UpdateLocalPoliceElsState(function(state)
-        if state.stage < 3 then
-            state.stage = 3
+        if state.stage <= 0 then
+            state.stage = 1
         end
+
         state.siren = not state.siren
     end, function(state)
         return state.siren and "Siren enabled" or "Siren muted"
@@ -591,88 +364,7 @@ end, false)
 RegisterCommand('-cnr_els_siren', function() end, false)
 RegisterKeyMapping(
     '+cnr_els_siren',
-    'Police ELS - Toggle main siren',
+    'Police lights - Toggle siren',
     'keyboard',
     (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.sirenToggleKey) or 'L'
-)
-
-RegisterCommand('+cnr_els_warning', function()
-    UpdateLocalPoliceElsState(function(state)
-        if state.stage < 2 then
-            state.stage = 2
-        end
-        state.warning = not state.warning
-    end, function(state)
-        return state.warning and "Warning lights enabled" or "Warning lights disabled"
-    end)
-end, false)
-RegisterCommand('-cnr_els_warning', function() end, false)
-RegisterKeyMapping(
-    '+cnr_els_warning',
-    'Police ELS - Toggle warning group',
-    'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.warningToggleKey) or 'O'
-)
-
-RegisterCommand('+cnr_els_secondary', function()
-    UpdateLocalPoliceElsState(function(state)
-        if state.stage < 3 then
-            state.stage = 3
-        end
-        state.secondary = not state.secondary
-    end, function(state)
-        return state.secondary and "Secondary lights enabled" or "Secondary lights disabled"
-    end)
-end, false)
-RegisterCommand('-cnr_els_secondary', function() end, false)
-RegisterKeyMapping(
-    '+cnr_els_secondary',
-    'Police ELS - Toggle secondary group',
-    'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.secondaryToggleKey) or 'P'
-)
-
-RegisterCommand('+cnr_els_pattern', function()
-    UpdateLocalPoliceElsState(function(state)
-        state.pattern = (state.pattern % 3) + 1
-    end, function(state)
-        return ("Flash pattern %d"):format(state.pattern)
-    end)
-end, false)
-RegisterCommand('-cnr_els_pattern', function() end, false)
-RegisterKeyMapping(
-    '+cnr_els_pattern',
-    'Police ELS - Cycle flash pattern',
-    'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.patternCycleKey) or 'U'
-)
-
-RegisterCommand('+cnr_els_takedown', function()
-    UpdateLocalPoliceElsState(function(state)
-        state.takedown = not state.takedown
-    end, function(state)
-        return state.takedown and "Takedowns enabled" or "Takedowns disabled"
-    end)
-end, false)
-RegisterCommand('-cnr_els_takedown', function() end, false)
-RegisterKeyMapping(
-    '+cnr_els_takedown',
-    'Police ELS - Toggle takedowns',
-    'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.takedownToggleKey) or 'RBRACKET'
-)
-
-RegisterCommand('+cnr_els_scene', function()
-    UpdateLocalPoliceElsState(function(state)
-        state.scene = not state.scene
-    end, function(state)
-        return state.scene and "Scene lights enabled" or "Scene lights disabled"
-    end)
-end, false)
-RegisterCommand('-cnr_els_scene', function() end, false)
-RegisterKeyMapping(
-    '+cnr_els_scene',
-    'Police ELS - Toggle scene lights',
-    'keyboard',
-    (Config.PoliceELS and Config.PoliceELS.keybinds and Config.PoliceELS.keybinds.sceneToggleKey) or 'N'
 )
