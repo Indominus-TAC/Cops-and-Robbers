@@ -95,25 +95,17 @@ Config.PoliceELS = {
     },
     defaultProfile = {
         useNativeEmergencyLights = true,
+        useManualSirenAudio = false,
         allowSecondaryAtStage2 = false,
-        cruiseExtras = { 1, 4 },
-        primaryExtras = { 1, 2, 3, 4 },
-        warningExtras = { 5, 6 },
-        secondaryExtras = { 7, 8, 9 },
-        takedownExtras = { 10 },
-        sceneExtras = { 11, 12 },
+        cruiseExtras = {},
+        primaryExtras = {},
+        warningExtras = {},
+        secondaryExtras = {},
+        takedownExtras = {},
+        sceneExtras = {},
         flashIntervals = { 240, 150, 95 }
     },
-    vehicleProfiles = {
-        police = {
-            cruiseExtras = { 1, 4 },
-            primaryExtras = { 1, 2, 3, 4 },
-            warningExtras = { 5, 6 },
-            secondaryExtras = { 7, 8, 9 },
-            takedownExtras = { 10 },
-            sceneExtras = { 11, 12 }
-        }
-    }
+    vehicleProfiles = {}
 }
 
 

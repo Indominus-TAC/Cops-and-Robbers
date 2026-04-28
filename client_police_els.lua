@@ -7,6 +7,7 @@ local localPoliceElsFallbackState = {}
 local policeElsProfileCache = {}
 local policeElsAllowedModelNames = nil
 local policeElsAllowedModelHashes = nil
+local policeElsRuntimeState = {}
 local lastPoliceElsHintVehicle = 0
 
 local function Notify(message)
@@ -292,6 +293,87 @@ local function SetVehicleExtraGroupState(vehicle, extras, isEnabled)
     end
 end
 
+local function ProfileUsesExtraLighting(profile)
+    if not profile then
+        return false
+    end
+
+    local groups = {
+        profile.cruiseExtras,
+        profile.primaryExtras,
+        profile.warningExtras,
+        profile.secondaryExtras,
+        profile.takedownExtras,
+        profile.sceneExtras
+    }
+
+    for _, extras in ipairs(groups) do
+        if type(extras) == "table" and #extras > 0 then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function GetPoliceElsRuntime(vehicle)
+    local runtime = policeElsRuntimeState[vehicle]
+    if runtime then
+        return runtime
+    end
+
+    runtime = {}
+    policeElsRuntimeState[vehicle] = runtime
+    return runtime
+end
+
+local function SetVehicleIndicatorState(vehicle, leftEnabled, rightEnabled)
+    if type(SetVehicleIndicatorLights) ~= "function" then
+        return
+    end
+
+    SetVehicleIndicatorLights(vehicle, 0, rightEnabled == true)
+    SetVehicleIndicatorLights(vehicle, 1, leftEnabled == true)
+end
+
+local function GetGenericPoliceElsOverlayState(profile, state, phase)
+    local overlay = {
+        leftIndicator = false,
+        rightIndicator = false,
+        fullbeam = state.takedown == true
+    }
+
+    local warningActive = state.stage >= 2 and state.warning
+    local secondaryActive = (state.stage >= 3 and state.secondary) or (
+        state.stage == 2 and state.secondary and profile.allowSecondaryAtStage2 == true
+    )
+
+    if warningActive then
+        if state.pattern == 2 then
+            overlay.leftIndicator = phase == 0 or phase == 2
+            overlay.rightIndicator = phase == 1 or phase == 3
+        elseif state.pattern == 3 then
+            overlay.leftIndicator = phase ~= 1
+            overlay.rightIndicator = phase == 1 or phase == 2
+        else
+            overlay.leftIndicator = phase < 2
+            overlay.rightIndicator = phase >= 2
+        end
+    end
+
+    if secondaryActive then
+        if state.pattern == 2 then
+            overlay.fullbeam = overlay.fullbeam or phase == 0 or phase == 3
+        elseif state.pattern == 3 then
+            overlay.fullbeam = overlay.fullbeam or phase ~= 2
+        else
+            overlay.fullbeam = overlay.fullbeam or (phase % 2) == 0
+        end
+    end
+
+    return overlay
+end
+
 local function ShouldPoliceElsPatternLight(index, count, pattern, phase)
     if count <= 0 then
         return false
@@ -338,28 +420,38 @@ local function ApplyPoliceElsStateToVehicle(vehicle, profile, state, now)
     end
 
     local phase = math.floor((now or GetGameTimer()) / interval) % 4
+    local usesExtras = ProfileUsesExtraLighting(profile)
+    local runtime = GetPoliceElsRuntime(vehicle)
+    local emergencyLightsActive = state.stage >= 2
+    local sirenAudible = emergencyLightsActive and state.stage >= 3 and state.siren
 
-    ApplyPoliceElsFlashingGroup(vehicle, profile.primaryExtras, state.pattern, phase, state.stage >= 2)
-    ApplyPoliceElsFlashingGroup(vehicle, profile.warningExtras, state.pattern, phase + 1, state.stage >= 2 and state.warning)
-    ApplyPoliceElsFlashingGroup(
-        vehicle,
-        profile.secondaryExtras,
-        state.pattern,
-        phase + 2,
-        (state.stage >= 3 and state.secondary) or (state.stage == 2 and state.secondary and profile.allowSecondaryAtStage2 == true)
-    )
+    if usesExtras then
+        ApplyPoliceElsFlashingGroup(vehicle, profile.primaryExtras, state.pattern, phase, emergencyLightsActive)
+        ApplyPoliceElsFlashingGroup(vehicle, profile.warningExtras, state.pattern, phase + 1, emergencyLightsActive and state.warning)
+        ApplyPoliceElsFlashingGroup(
+            vehicle,
+            profile.secondaryExtras,
+            state.pattern,
+            phase + 2,
+            (state.stage >= 3 and state.secondary) or (state.stage == 2 and state.secondary and profile.allowSecondaryAtStage2 == true)
+        )
+    else
+        SetVehicleExtraGroupState(vehicle, profile.primaryExtras, false)
+        SetVehicleExtraGroupState(vehicle, profile.warningExtras, false)
+        SetVehicleExtraGroupState(vehicle, profile.secondaryExtras, false)
+    end
 
     SetVehicleExtraGroupState(vehicle, profile.cruiseExtras, state.stage == 1)
     SetVehicleExtraGroupState(vehicle, profile.takedownExtras, state.takedown)
     SetVehicleExtraGroupState(vehicle, profile.sceneExtras, state.scene)
 
     if profile.useNativeEmergencyLights ~= false then
-        SetVehicleSiren(vehicle, state.stage > 0 or state.takedown or state.scene)
+        SetVehicleSiren(vehicle, emergencyLightsActive)
         if type(SetVehicleHasMutedSirens) == "function" then
-            SetVehicleHasMutedSirens(vehicle, not (state.stage >= 3 and state.siren))
+            SetVehicleHasMutedSirens(vehicle, not sirenAudible)
         end
         if type(SetSirenWithNoDriver) == "function" then
-            SetSirenWithNoDriver(vehicle, state.stage > 0)
+            SetSirenWithNoDriver(vehicle, emergencyLightsActive)
         end
     end
 
@@ -370,6 +462,30 @@ local function ApplyPoliceElsStateToVehicle(vehicle, profile, state, now)
     if type(SetVehicleInteriorlight) == "function" then
         SetVehicleInteriorlight(vehicle, state.scene)
     end
+
+    if usesExtras then
+        SetVehicleIndicatorState(vehicle, false, false)
+        if type(SetVehicleFullbeam) == "function" then
+            SetVehicleFullbeam(vehicle, state.takedown)
+        end
+    else
+        local overlay = GetGenericPoliceElsOverlayState(profile, state, phase)
+        SetVehicleIndicatorState(vehicle, overlay.leftIndicator, overlay.rightIndicator)
+
+        if type(SetVehicleFullbeam) == "function" then
+            SetVehicleFullbeam(vehicle, overlay.fullbeam)
+        end
+    end
+
+    if sirenAudible and runtime.lastSirenAudible ~= true then
+        if type(TriggerSiren) == "function" then
+            TriggerSiren(vehicle)
+        elseif type(_TRIGGER_SIREN) == "function" then
+            _TRIGGER_SIREN(vehicle)
+        end
+    end
+
+    runtime.lastSirenAudible = sirenAudible
 end
 
 local function FormatPoliceElsStageLabel(stage)
