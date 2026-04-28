@@ -433,13 +433,7 @@ end
 --- Clean up validation data for disconnected player
 --- @param playerId number Player ID
 function Validation.CleanupPlayer(playerId)
-    for key in pairs(rateLimits) do
-        if string.find(key, "^" .. playerId .. "_") then
-            rateLimits[key] = nil
-        end
-    end
-    
-    playerEventCounts[playerId] = nil
+    return Validation.CleanupPlayerData(playerId)
 end
 
 --- Periodic cleanup of old rate limit data
@@ -750,18 +744,33 @@ end
 --- @param playerId number Player ID
 --- @return number Number of items cleaned
 function Validation.CleanupPlayerData(playerId)
+    playerId = tonumber(playerId)
+    if not playerId then
+        return 0
+    end
+
     local cleanedItems = 0
-    
-    -- Clear rate limiting data for this player
-    if rateLimits[playerId] then
+
+    -- Clear enhanced rate limiting data stored by player ID.
+    if rateLimits[playerId] ~= nil then
         rateLimits[playerId] = nil
         cleanedItems = cleanedItems + 1
     end
-    
-    -- Clear any cached validation results
-    -- (Add more cleanup as validation system grows)
-    
-    LogValidationError(playerId, "cleanup", string.format("Validation cleanup completed (%d items)", cleanedItems))
+
+    -- Clear legacy rate limiting data stored under "<playerId>_<action>" keys.
+    local playerKeyPrefix = string.format("^%d_", playerId)
+    for key in pairs(rateLimits) do
+        if type(key) == "string" and string.find(key, playerKeyPrefix) then
+            rateLimits[key] = nil
+            cleanedItems = cleanedItems + 1
+        end
+    end
+
+    if playerEventCounts[playerId] ~= nil then
+        playerEventCounts[playerId] = nil
+        cleanedItems = cleanedItems + 1
+    end
+
     return cleanedItems
 end
 
