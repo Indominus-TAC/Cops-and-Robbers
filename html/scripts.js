@@ -2869,16 +2869,16 @@ function updateActionButtonStates(itemId, itemData) {
 
 // Check if item can be equipped
 function canItemBeEquipped(itemData) {
-    const equipableCategories = ['Weapons', 'Melee Weapons', 'Armor', 'Cop Gear', 'Utility'];
-    return equipableCategories.includes(itemData.category);
+    if (!itemData) return false;
+    if (itemData.category === 'Armor') return true;
+    return typeof itemData.itemId === 'string' && itemData.itemId.startsWith('weapon_');
 }
 
 // Check if item can be used
 function canItemBeUsed(itemData) {
-    const usableCategories = ['Utility', 'Armor', 'Cop Gear'];
-    const usableItems = ['medkit', 'firstaidkit', 'armor', 'heavy_armor', 'spikestrip_item'];
-    
-    return usableCategories.includes(itemData.category) || usableItems.includes(itemData.itemId);
+    if (!itemData) return false;
+    const usableItems = new Set(['medkit', 'firstaidkit', 'armor', 'heavy_armor', 'spikestrip_item']);
+    return usableItems.has(itemData.itemId);
 }
 
 // Clear item selection

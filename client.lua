@@ -162,6 +162,7 @@ local g_policeVehiclesSpawned = false
 
 -- Inventory system variables
 local clientConfigItems = nil
+local clientConfigItemsById = {}
 local isInventoryOpen = false
 local localPlayerInventory = {}
 local localPlayerEquippedItems = {}
@@ -218,6 +219,231 @@ function GetClientConfigItems()
     return clientConfigItems
 end
 
+local inventoryAmmoCompatibility = {
+    ammo_pistol = {
+        "weapon_pistol",
+        "weapon_combatpistol",
+        "weapon_pistol_mk2",
+        "weapon_appistol",
+        "weapon_heavypistol",
+        "weapon_doubleaction",
+        "weapon_vintagepistol",
+        "weapon_snspistol"
+    },
+    ammo_smg = {
+        "weapon_smg",
+        "weapon_microsmg",
+        "weapon_machinepistol",
+        "weapon_minismg",
+        "weapon_gusenberg"
+    },
+    ammo_rifle = {
+        "weapon_assaultrifle",
+        "weapon_carbinerifle",
+        "weapon_specialcarbine",
+        "weapon_specialcarbine_mk2",
+        "weapon_bullpuprifle",
+        "weapon_compactrifle",
+        "weapon_advancedrifle"
+    },
+    ammo_shotgun = {
+        "weapon_pumpshotgun",
+        "weapon_sawnoffshotgun",
+        "weapon_bullpupshotgun",
+        "weapon_assaultshotgun",
+        "weapon_heavyshotgun",
+        "weapon_dbshotgun",
+        "weapon_autoshotgun",
+        "weapon_combatshotgun"
+    },
+    ammo_sniper = {
+        "weapon_sniperrifle",
+        "weapon_heavysniper",
+        "weapon_heavysniper_mk2",
+        "weapon_marksmanrifle",
+        "weapon_marksmanrifle_mk2"
+    },
+    ammo_explosive = {
+        "weapon_rpg",
+        "weapon_grenadelauncher",
+        "weapon_hominglauncher"
+    },
+    ammo_minigun = {
+        "weapon_minigun"
+    }
+}
+
+local function RebuildClientConfigItemsById()
+    clientConfigItemsById = {}
+
+    if type(clientConfigItems) ~= "table" then
+        return
+    end
+
+    for _, itemConfig in ipairs(clientConfigItems) do
+        if type(itemConfig) == "table" and itemConfig.itemId then
+            clientConfigItemsById[itemConfig.itemId] = itemConfig
+        end
+    end
+end
+
+local function GetClientConfigItemById(itemId)
+    if not itemId or itemId == "" then
+        return nil
+    end
+
+    if type(clientConfigItemsById) ~= "table" or not next(clientConfigItemsById) then
+        RebuildClientConfigItemsById()
+    end
+
+    return clientConfigItemsById[itemId]
+end
+
+local function GetInventoryEntryCount(itemData)
+    if type(itemData) == "table" then
+        return tonumber(itemData.count or itemData.quantity or 0) or 0
+    end
+
+    return tonumber(itemData) or 0
+end
+
+local function GetDefaultAmmoCount(itemId)
+    if Config and Config.DefaultWeaponAmmo then
+        return tonumber(Config.DefaultWeaponAmmo[itemId] or 0) or 0
+    end
+
+    return 0
+end
+
+local function ResolveInventoryWeaponHash(itemId)
+    if type(itemId) ~= "string" or itemId == "" then
+        return 0, {}
+    end
+
+    local attemptedHashes = {}
+    local candidates = {}
+    local itemIdLower = string.lower(itemId)
+    local seenCandidates = {}
+
+    local function addCandidate(candidate)
+        if candidate and candidate ~= "" and not seenCandidates[candidate] then
+            seenCandidates[candidate] = true
+            candidates[#candidates + 1] = candidate
+        end
+    end
+
+    addCandidate(itemIdLower)
+    addCandidate(string.upper(itemIdLower))
+
+    if string.sub(itemIdLower, 1, 7) ~= "weapon_" then
+        addCandidate("weapon_" .. itemIdLower)
+        addCandidate(string.upper("weapon_" .. itemIdLower))
+    end
+
+    for _, candidate in ipairs(candidates) do
+        local weaponHash = GetHashKey(candidate)
+        attemptedHashes[#attemptedHashes + 1] = candidate .. " -> " .. tostring(weaponHash)
+
+        if weaponHash ~= 0 and weaponHash ~= -1 and (not IsWeaponValid or IsWeaponValid(weaponHash)) then
+            return weaponHash, attemptedHashes, candidate
+        end
+    end
+
+    return 0, attemptedHashes
+end
+
+local function IsWeaponInventoryItem(itemId, itemData)
+    local normalizedItemId = type(itemId) == "string" and string.lower(itemId) or ""
+
+    if type(itemData) == "table" and itemData.category == "Ammunition" then
+        return false
+    end
+
+    if string.sub(normalizedItemId, 1, 7) ~= "weapon_" then
+        local weaponCategories = {
+            ["Weapons"] = true,
+            ["Melee Weapons"] = true,
+            ["Explosives"] = true
+        }
+
+        if not (type(itemData) == "table" and weaponCategories[itemData.category]) then
+            return false
+        end
+    end
+
+    local weaponHash = ResolveInventoryWeaponHash(itemId)
+    return weaponHash ~= 0
+end
+
+local function FindAmmoTargetWeapon(playerPed, ammoItemId, ammoConfig)
+    local compatibleWeaponIds = inventoryAmmoCompatibility[ammoItemId]
+
+    if type(compatibleWeaponIds) == "table" then
+        for _, weaponItemId in ipairs(compatibleWeaponIds) do
+            local weaponHash = ResolveInventoryWeaponHash(weaponItemId)
+            if weaponHash ~= 0 and HasPedGotWeapon(playerPed, weaponHash, false) then
+                return weaponHash, weaponItemId
+            end
+        end
+    end
+
+    if ammoConfig and ammoConfig.weaponLink then
+        local fallbackWeaponHash = ResolveInventoryWeaponHash(ammoConfig.weaponLink)
+        if fallbackWeaponHash ~= 0 and HasPedGotWeapon(playerPed, fallbackWeaponHash, false) then
+            return fallbackWeaponHash, ammoConfig.weaponLink
+        end
+    end
+
+    return 0, nil
+end
+
+local function ApplyInventoryAmmoToWeapons(playerPed)
+    if not (playerPed and playerPed ~= 0 and playerPed ~= -1 and DoesEntityExist(playerPed)) then
+        return
+    end
+
+    if type(localPlayerInventory) ~= "table" or not next(localPlayerInventory) then
+        return
+    end
+
+    local appliedAmmoTypes = 0
+
+    for itemId, itemData in pairs(localPlayerInventory) do
+        local itemCount = GetInventoryEntryCount(itemData)
+        if itemCount > 0 then
+            local itemConfig = GetClientConfigItemById(itemId)
+            if itemConfig and itemConfig.category == "Ammunition" then
+                local targetWeaponHash, targetWeaponItemId = FindAmmoTargetWeapon(playerPed, itemId, itemConfig)
+                if targetWeaponHash ~= 0 then
+                    local ammoPerItem = tonumber(itemConfig.ammoAmount or 0) or 0
+                    local totalAmmo = GetDefaultAmmoCount(targetWeaponItemId) + (itemCount * ammoPerItem)
+
+                    if totalAmmo > 0 then
+                        SetPedAmmo(playerPed, targetWeaponHash, totalAmmo)
+                        appliedAmmoTypes = appliedAmmoTypes + 1
+                        Log(string.format(
+                            "  ✓ APPLIED AMMO: %s -> %s (%d reserve from inventory, %d total)",
+                            itemConfig.name or itemId,
+                            targetWeaponItemId or tostring(targetWeaponHash),
+                            itemCount * ammoPerItem,
+                            totalAmmo
+                        ), "info", "CNR_INV_CLIENT")
+                    end
+                else
+                    Log(string.format(
+                        "  ℹ AMMO STORED_ONLY: %s has no compatible equipped weapon yet.",
+                        itemConfig.name or itemId
+                    ), "info", "CNR_INV_CLIENT")
+                end
+            end
+        end
+    end
+
+    if appliedAmmoTypes > 0 then
+        Log("ApplyInventoryAmmoToWeapons: Applied ammo to " .. appliedAmmoTypes .. " weapon families.", "info", "CNR_INV_CLIENT")
+    end
+end
+
 -- Update full inventory function from inventory_client.lua
 function UpdateFullInventory(minimalInventoryData)
     Log("UpdateFullInventory received data. Attempting reconstruction...", "info", "CNR_INV_CLIENT")
@@ -262,13 +488,7 @@ function UpdateFullInventory(minimalInventoryData)
     if minimalInventoryData and type(minimalInventoryData) == 'table' then
         for itemId, minItemData in pairs(minimalInventoryData) do
             if minItemData and minItemData.count and minItemData.count > 0 then
-                local itemDetails = nil
-                for _, cfgItem in ipairs(configItems) do
-                    if cfgItem.itemId == itemId then
-                        itemDetails = cfgItem
-                        break
-                    end
-                end
+                local itemDetails = GetClientConfigItemById(itemId)
 
                 if itemDetails then
                     reconstructedInventory[itemId] = {
@@ -373,26 +593,9 @@ function EquipInventoryWeapons()
                 armorApplied = true
                 Log(string.format("  ✓ APPLIED ARMOR: %s (Amount: %d)", itemData.name or itemId, armorAmount), "info", "CNR_INV_CLIENT")
 
-            elseif (itemData.category == "Weapons" or itemData.category == "Melee Weapons" or
-                   (itemData.category == "Utility" and string.find(itemId, "weapon_"))) and itemData.count > 0 then
-                
-                local weaponHash = 0
-                local attemptedHashes = {}
-                
-                weaponHash = GetHashKey(itemId)
-                table.insert(attemptedHashes, itemId .. " -> " .. weaponHash)
-                
-                if weaponHash == 0 or weaponHash == -1 then
-                    local upperItemId = string.upper(itemId)
-                    weaponHash = GetHashKey(upperItemId)
-                    table.insert(attemptedHashes, upperItemId .. " -> " .. weaponHash)
-                end
-                
-                if (weaponHash == 0 or weaponHash == -1) and not string.find(itemId, "weapon_") then
-                    local prefixedId = "weapon_" .. itemId
-                    weaponHash = GetHashKey(prefixedId)
-                    table.insert(attemptedHashes, prefixedId .. " -> " .. weaponHash)
-                end
+            elseif IsWeaponInventoryItem(itemId, itemData) and itemData.count > 0 then
+
+                local weaponHash = ResolveInventoryWeaponHash(itemId)
 
                 if weaponHash ~= 0 and weaponHash ~= -1 then
                     local ammoCount = itemData.ammo
@@ -441,6 +644,8 @@ function EquipInventoryWeapons()
     end
 
     ApplyRoleStarterWeapons(role or playerData.role)
+    Citizen.Wait(100)
+    ApplyInventoryAmmoToWeapons(playerPed)
     Log(string.format("EquipInventoryWeapons: Finished. Processed %d items. Successfully equipped %d weapons. Armor applied: %s", processedItemCount, weaponsEquipped, armorApplied and "Yes" or "No"), "info", "CNR_INV_CLIENT")
 end
 
@@ -6386,6 +6591,7 @@ end)
 
 AddEventHandler('cnr:receiveConfigItems', function(receivedConfigItems)
     clientConfigItems = receivedConfigItems
+    RebuildClientConfigItemsById()
     Log("Received Config.Items from server. Item count: " .. tablelength(clientConfigItems or {}), "info", "CNR_INV_CLIENT")
 
     SendNUIMessage({
@@ -7208,6 +7414,7 @@ RegisterNUICallback('equipInventoryItem', function(data, cb)
     local itemId = tostring(data and data.itemId or "")
     local equip = not (data and data.equip == false)
     local itemData = localPlayerInventory[itemId]
+    local weaponHash = ResolveInventoryWeaponHash(itemId)
 
     if itemId == "" or not itemData then
         cb({ success = false, error = "Item not found." })
@@ -7215,9 +7422,7 @@ RegisterNUICallback('equipInventoryItem', function(data, cb)
     end
 
     local playerPed = PlayerPedId()
-    local isWeaponItem = itemData.category == "Weapons"
-        or itemData.category == "Melee Weapons"
-        or (itemData.category == "Utility" and string.find(itemId, "weapon_") ~= nil)
+    local isWeaponItem = weaponHash ~= 0 and IsWeaponInventoryItem(itemId, itemData)
 
     if itemData.category == "Armor" then
         if equip then
@@ -7233,8 +7438,10 @@ RegisterNUICallback('equipInventoryItem', function(data, cb)
     end
 
     if isWeaponItem then
-        local weaponHash = GetHashKey(itemId)
-        local ammoCount = (Config.DefaultWeaponAmmo and Config.DefaultWeaponAmmo[itemId]) or 250
+        local ammoCount = GetDefaultAmmoCount(itemId)
+        if ammoCount <= 0 then
+            ammoCount = 250
+        end
 
         if equip then
             GiveWeaponToPed(playerPed, weaponHash, ammoCount, false, true)
@@ -7245,12 +7452,12 @@ RegisterNUICallback('equipInventoryItem', function(data, cb)
             localPlayerEquippedItems[itemId] = false
         end
 
+        ApplyInventoryAmmoToWeapons(playerPed)
         cb({ success = true })
         return
     end
 
-    localPlayerEquippedItems[itemId] = equip
-    cb({ success = true })
+    cb({ success = false, error = "This item cannot be equipped." })
 end)
 
 RegisterNUICallback('useInventoryItem', function(data, cb)
