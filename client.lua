@@ -3344,7 +3344,7 @@ local function GetPdGarageSpawnBounds(padding)
         return nil
     end
 
-    local extraPadding = tonumber(padding) or 8.0
+    local extraPadding = tonumber(padding) or 16.0
     local minX, minY, minZ = nil, nil, nil
     local maxX, maxY, maxZ = nil, nil, nil
 
@@ -3378,6 +3378,19 @@ local function SuppressPdGarageAmbientVehicleSpawns()
     local bounds = GetPdGarageSpawnBounds()
     if not bounds then
         return
+    end
+
+    if type(SetAllVehicleGeneratorsActiveInArea) == "function" then
+        SetAllVehicleGeneratorsActiveInArea(
+            bounds.minX,
+            bounds.minY,
+            bounds.minZ,
+            bounds.maxX,
+            bounds.maxY,
+            bounds.maxZ,
+            false,
+            false
+        )
     end
 
     if type(RemoveVehiclesFromGeneratorsInArea) == "function" then
@@ -3418,13 +3431,13 @@ Citizen.CreateThread(function()
     while true do
         local garage = GetPdGarageConfig()
         if garage then
-            local waitTime = 5000
+            local waitTime = 2500
             local garageLocation = GetPdGarageInteractionLocation()
             local playerPed = PlayerPedId()
             if garageLocation and playerPed and playerPed ~= 0 then
                 local playerCoords = GetEntityCoords(playerPed)
-                if #(playerCoords - garageLocation) <= 180.0 then
-                    waitTime = 1500
+                if #(playerCoords - garageLocation) <= 300.0 then
+                    waitTime = 250
                 end
             end
 
