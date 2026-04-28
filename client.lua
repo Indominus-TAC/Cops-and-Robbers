@@ -1714,7 +1714,7 @@ local function ClearStoreHelpText()
     end
 end
 
-local function CopyTextToClipboard(text, successMessage)
+function CopyTextToClipboard(text, successMessage)
     if not text or text == "" then
         return false
     end
@@ -1728,7 +1728,7 @@ local function CopyTextToClipboard(text, successMessage)
     return true
 end
 
-local function BuildPlayerCoordsClipboardText(playerPed)
+function BuildPlayerCoordsClipboardText(playerPed)
     if not playerPed or playerPed == 0 then
         return nil
     end
@@ -1742,7 +1742,7 @@ local function BuildPlayerCoordsClipboardText(playerPed)
     return string.format("vector4(%.2f, %.2f, %.2f, %.2f)", coords.x, coords.y, coords.z, heading)
 end
 
-local function GetPoliceDepartments()
+function GetPoliceDepartments()
     if Config and type(Config.PoliceDepartments) == "table" then
         return Config.PoliceDepartments
     end
@@ -1750,7 +1750,7 @@ local function GetPoliceDepartments()
     return {}
 end
 
-local function BuildMergedPdGarageConfig(baseGarage, department)
+function BuildMergedPdGarageConfig(baseGarage, department)
     local base = baseGarage or {}
     local overrideGarage = department and department.garage or nil
     if type(overrideGarage) ~= "table" then
@@ -1789,7 +1789,7 @@ local function BuildMergedPdGarageConfig(baseGarage, department)
     return merged
 end
 
-local function GetRandomPoliceDepartment()
+function GetRandomPoliceDepartment()
     local departments = GetPoliceDepartments()
     if #departments <= 0 then
         return nil
@@ -1798,7 +1798,7 @@ local function GetRandomPoliceDepartment()
     return departments[math.random(1, #departments)]
 end
 
-local function GetRoleSpawnEntry(roleName)
+function GetRoleSpawnEntry(roleName)
     if roleName == "cop" then
         local department = GetRandomPoliceDepartment()
         if department and department.respawn then
@@ -1813,7 +1813,7 @@ local function GetRoleSpawnEntry(roleName)
     return nil, nil
 end
 
-local function GetNearestPoliceDepartment(originCoords, requireGarage)
+function GetNearestPoliceDepartment(originCoords, requireGarage)
     local departments = GetPoliceDepartments()
     if #departments <= 0 then
         return nil
@@ -1855,7 +1855,7 @@ local function GetNearestPoliceDepartment(originCoords, requireGarage)
     return nearestDepartment or departments[1]
 end
 
-local function GetResolvedPdGarageContext(originCoords)
+function GetResolvedPdGarageContext(originCoords)
     local baseGarage = Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled and Config.PDGarage or nil
     if not baseGarage then
         return nil
@@ -1873,7 +1873,7 @@ local function GetResolvedPdGarageContext(originCoords)
     }
 end
 
-local function GetAllResolvedPdGarageContexts()
+function GetAllResolvedPdGarageContexts()
     local baseGarage = Config and type(Config.PDGarage) == "table" and Config.PDGarage.enabled and Config.PDGarage or nil
     if not baseGarage then
         return {}
