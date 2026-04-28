@@ -3306,23 +3306,11 @@ function showPoliceMenu(data = {}) {
                         </div>
                         <div id="police-cad-calls-list" class="dispatch-list dispatch-list--featured"></div>
                     </section>
-                    <section class="role-card role-live-map-card">
-                        <div class="role-card-heading">
-                            <div>
-                                <h2>Live Operations Map</h2>
-                                <p>Visualize on-duty units, active scenes, and wanted suspects in one shared command view.</p>
-                            </div>
-                        </div>
-                        <div class="live-map-shell">
-                            <div id="police-live-map" class="live-map-canvas"></div>
-                            <div id="police-live-map-details" class="live-map-details"></div>
-                        </div>
-                    </section>
                     <section class="role-card">
                         <div class="role-card-heading">
                             <div>
                                 <h2>Quick Actions</h2>
-                                <p>Immediate tools for field support and suspect tracking.</p>
+                                <p>Immediate tools for field support while shared unit tracking stays on the GTA map and minimap.</p>
                             </div>
                         </div>
                         <div class="role-action-grid">
@@ -3626,7 +3614,6 @@ function updatePoliceCadData(cadData = {}, citationReasons = []) {
         citationAmount.value = selectedReason.fine || 0;
     }
 
-    renderPoliceLiveMap();
 }
 
 async function loadPoliceCadData(showErrors = true) {

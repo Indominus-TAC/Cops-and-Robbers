@@ -4,6 +4,10 @@
 -- However, config.lua is a shared_script, so Config global should be available.
 -- For safety, ensure Log definition handles potential nil Config if script order changes.
 local Config = Config -- Keep this near the top as Log depends on it.
+Config.RoleMapRefreshIntervalMs = Config.RoleMapRefreshIntervalMs or 2000
+Config.SpeedingAlertDurationMs = Config.SpeedingAlertDurationMs or 15000
+Config.SpeedingAlertRadius = Config.SpeedingAlertRadius or 125.0
+Config.SpeedingAlertAlpha = Config.SpeedingAlertAlpha or 80
 
 
 -- Safe table assignment wrapper for player IDs
@@ -27,6 +31,7 @@ end
 -- Forward declarations for functions defined later
 local MarkPlayerForInventorySave
 local SavePlayerDataImmediate
+local CloneVectorCoords
 
 -- Global state tables
 local playersData = _G.playersData or {}
@@ -1677,101 +1682,202 @@ end, Config.WantedSettings.decayIntervalMs or 30000, 150000, 2)
 local playerSpeedingData = {} -- Track speeding state per player
 local playerVehicleData = {} -- Track vehicle damage and collisions
 
+local function BuildSpeedingAlertCoords(coords)
+    if not coords or coords.x == nil or coords.y == nil or coords.z == nil then
+        return nil
+    end
+
+    return {
+        x = coords.x + 0.0,
+        y = coords.y + 0.0,
+        z = coords.z + 0.0
+    }
+end
+
+local function ClearSpeedingAlertForPlayer(playerId)
+    local pIdNum = tonumber(playerId)
+    if not pIdNum or pIdNum <= 0 then
+        return
+    end
+
+    local speedData = playerSpeedingData[pIdNum]
+    if speedData then
+        speedData.alertActive = false
+        speedData.lastAlertBroadcast = 0
+    end
+
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            TriggerClientEvent('cnr:clearSpeedingLocationPulse', copId, pIdNum)
+        end
+    end
+end
+
+local function BroadcastSpeedingAlertForPlayer(playerId, coords)
+    local pIdNum = tonumber(playerId)
+    local payloadCoords = BuildSpeedingAlertCoords(coords)
+    if not pIdNum or pIdNum <= 0 or not payloadCoords then
+        return
+    end
+
+    local speedData = playerSpeedingData[pIdNum]
+    if speedData then
+        speedData.alertActive = true
+        speedData.lastAlertBroadcast = os.time()
+    end
+
+    local alertPayload = {
+        offenderId = pIdNum,
+        coords = payloadCoords,
+        radius = tonumber(Config.SpeedingAlertRadius) or 125.0,
+        durationMs = tonumber(Config.SpeedingAlertDurationMs) or 15000,
+        alpha = tonumber(Config.SpeedingAlertAlpha) or 80
+    }
+
+    for copId, _ in pairs(copsOnDuty) do
+        if SafeGetPlayerName(copId) ~= nil then
+            TriggerClientEvent('cnr:showSpeedingLocationPulse', copId, alertPayload)
+        end
+    end
+end
+
 PerformanceOptimizer.CreateOptimizedLoop(function()
     for playerId, _ in pairs(robbersActive) do
         if SafeGetPlayerName(playerId) ~= nil then -- Player is online
             local playerPed = GetPlayerPed(playerId)
             if playerPed and playerPed > 0 and DoesEntityExist(playerPed) then
-                local vehicle = GetVehiclePedIsIn(playerPed, false)
-                if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
-                    local speed = GetEntitySpeed(vehicle) * 2.236936 -- Convert m/s to mph
-                    local currentTime = os.time()
-                    local vehicleClass = nil
-                    if type(GetVehicleClass) == "function" then
-                        vehicleClass = GetVehicleClass(vehicle)
-                    end
-                    
-                    -- Exclude aircraft (planes/helicopters) and boats from speeding detection
-                    local isAircraft = (vehicleClass == 15 or vehicleClass == 16) -- Helicopters and planes
-                    local isBoat = (vehicleClass == 14) -- Boats
-                    if vehicleClass == nil and type(GetEntityModel) == "function" then
-                        local vehicleModel = GetEntityModel(vehicle)
-                        if vehicleModel and vehicleModel ~= 0 then
-                            if type(IsThisModelAHeli) == "function" and IsThisModelAHeli(vehicleModel) then
-                                isAircraft = true
-                            elseif type(IsThisModelAPlane) == "function" and IsThisModelAPlane(vehicleModel) then
-                                isAircraft = true
-                            elseif type(IsThisModelABoat) == "function" and IsThisModelABoat(vehicleModel) then
-                                isBoat = true
-                            end
-                        end
-                    end
-                    local speedLimit = Config.SpeedLimitMph or 60.0
-                    
-                    -- Initialize player data if not exists
-                    if not playerSpeedingData[playerId] then
-                        playerSpeedingData[playerId] = {
-                            isCurrentlySpeeding = false,
-                            speedingStartTime = 0,
-                            lastSpeedingViolation = 0
-                        }
-                    end
-                    
-                    if not playerVehicleData[playerId] then
-                        playerVehicleData[playerId] = {
-                            lastVehicle = vehicle,
-                            lastVehicleHealth = GetVehicleEngineHealth(vehicle),
-                            lastCollisionCheck = currentTime
-                        }
-                    end
-                    
-                    local speedData = playerSpeedingData[playerId]
-                    local vehicleData = playerVehicleData[playerId]
-                    
-                    -- Check for speeding (increase wanted level) only for ground vehicles
-                    if not isAircraft and not isBoat and speed > speedLimit then
-                        if not speedData.isCurrentlySpeeding then
-                            -- Player just started speeding, start the timer
-                            speedData.speedingStartTime = currentTime
-                            speedData.isCurrentlySpeeding = true
-                        elseif (currentTime - speedData.speedingStartTime) > 5 and (currentTime - speedData.lastSpeedingViolation) > 10 then
-                            -- Player has been speeding for more than 5 seconds and cooldown period has passed
-                            speedData.lastSpeedingViolation = currentTime
-                            UpdatePlayerWantedLevel(playerId, "speeding")
-                            Log(string.format("Player %s caught speeding at %.1f mph (limit: %.1f mph)", playerId, speed, speedLimit), "info", "CNR_SERVER")
-                        end
-                    else
-                        -- Player is no longer speeding or in exempt vehicle
-                        speedData.isCurrentlySpeeding = false
-                        speedData.speedingStartTime = 0
-                    end
-                    
-                    -- Check for vehicle damage (potential hit and run)
-                    if vehicleData.lastVehicle == vehicle then
-                        local currentHealth = GetVehicleEngineHealth(vehicle)
-                        if currentHealth < vehicleData.lastVehicleHealth - 50 and speed > 20 then -- Significant damage while moving
-                            if (currentTime - vehicleData.lastCollisionCheck) > 3 then -- Cooldown to prevent spam
-                                vehicleData.lastCollisionCheck = currentTime
-                                UpdatePlayerWantedLevel(playerId, "hit_and_run")
-                                Log(string.format("Player %s involved in hit and run (vehicle damage detected)", playerId), "info", "CNR_SERVER")
-                            end
-                        end
-                        vehicleData.lastVehicleHealth = currentHealth
-                    else
-                        -- Player switched vehicles, update tracking
-                        vehicleData.lastVehicle = vehicle
-                        vehicleData.lastVehicleHealth = GetVehicleEngineHealth(vehicle)
-                    end
-                else
-                    -- Player not in vehicle, reset speeding state
+                local isDead = false
+                if type(IsEntityDead) == "function" then
+                    isDead = IsEntityDead(playerPed)
+                elseif type(GetEntityHealth) == "function" then
+                    isDead = (GetEntityHealth(playerPed) or 0) <= 0
+                end
+
+                if isDead then
                     if playerSpeedingData[playerId] then
+                        if playerSpeedingData[playerId].alertActive then
+                            ClearSpeedingAlertForPlayer(playerId)
+                        end
                         playerSpeedingData[playerId].isCurrentlySpeeding = false
                         playerSpeedingData[playerId].speedingStartTime = 0
+                    end
+                else
+                    local vehicle = GetVehiclePedIsIn(playerPed, false)
+                    if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+                        local speed = GetEntitySpeed(vehicle) * 2.236936 -- Convert m/s to mph
+                        local currentTime = os.time()
+                        local vehicleClass = nil
+                        if type(GetVehicleClass) == "function" then
+                            vehicleClass = GetVehicleClass(vehicle)
+                        end
+
+                        -- Exclude aircraft (planes/helicopters) and boats from speeding detection
+                        local isAircraft = (vehicleClass == 15 or vehicleClass == 16) -- Helicopters and planes
+                        local isBoat = (vehicleClass == 14) -- Boats
+                        if vehicleClass == nil and type(GetEntityModel) == "function" then
+                            local vehicleModel = GetEntityModel(vehicle)
+                            if vehicleModel and vehicleModel ~= 0 then
+                                if type(IsThisModelAHeli) == "function" and IsThisModelAHeli(vehicleModel) then
+                                    isAircraft = true
+                                elseif type(IsThisModelAPlane) == "function" and IsThisModelAPlane(vehicleModel) then
+                                    isAircraft = true
+                                elseif type(IsThisModelABoat) == "function" and IsThisModelABoat(vehicleModel) then
+                                    isBoat = true
+                                end
+                            end
+                        end
+                        local speedLimit = Config.SpeedLimitMph or 60.0
+
+                        -- Initialize player data if not exists
+                        if not playerSpeedingData[playerId] then
+                            playerSpeedingData[playerId] = {
+                                isCurrentlySpeeding = false,
+                                speedingStartTime = 0,
+                                lastSpeedingViolation = 0,
+                                lastAlertBroadcast = 0,
+                                alertActive = false
+                            }
+                        end
+
+                        if not playerVehicleData[playerId] then
+                            playerVehicleData[playerId] = {
+                                lastVehicle = vehicle,
+                                lastVehicleHealth = GetVehicleEngineHealth(vehicle),
+                                lastCollisionCheck = currentTime
+                            }
+                        end
+
+                        local speedData = playerSpeedingData[playerId]
+                        local vehicleData = playerVehicleData[playerId]
+
+                        -- Check for speeding (increase wanted level) only for ground vehicles
+                        if not isAircraft and not isBoat and speed > speedLimit then
+                            if not speedData.isCurrentlySpeeding then
+                                -- Player just started speeding, start the timer
+                                speedData.speedingStartTime = currentTime
+                                speedData.isCurrentlySpeeding = true
+                            elseif (currentTime - speedData.speedingStartTime) > 5 then
+                                if not speedData.alertActive or (currentTime - (speedData.lastAlertBroadcast or 0)) >= 15 then
+                                    BroadcastSpeedingAlertForPlayer(playerId, GetEntityCoords(playerPed))
+                                end
+
+                                if (currentTime - speedData.lastSpeedingViolation) > 10 then
+                                    -- Player has been speeding for more than 5 seconds and cooldown period has passed
+                                    speedData.lastSpeedingViolation = currentTime
+                                    UpdatePlayerWantedLevel(playerId, "speeding")
+                                    Log(string.format("Player %s caught speeding at %.1f mph (limit: %.1f mph)", playerId, speed, speedLimit), "info", "CNR_SERVER")
+                                end
+                            end
+                        else
+                            -- Player is no longer speeding or in exempt vehicle
+                            if speedData.alertActive then
+                                ClearSpeedingAlertForPlayer(playerId)
+                            end
+                            speedData.isCurrentlySpeeding = false
+                            speedData.speedingStartTime = 0
+                        end
+
+                        -- Check for vehicle damage (potential hit and run)
+                        if vehicleData.lastVehicle == vehicle then
+                            local currentHealth = GetVehicleEngineHealth(vehicle)
+                            if currentHealth < vehicleData.lastVehicleHealth - 50 and speed > 20 then -- Significant damage while moving
+                                if (currentTime - vehicleData.lastCollisionCheck) > 3 then -- Cooldown to prevent spam
+                                    vehicleData.lastCollisionCheck = currentTime
+                                    UpdatePlayerWantedLevel(playerId, "hit_and_run")
+                                    Log(string.format("Player %s involved in hit and run (vehicle damage detected)", playerId), "info", "CNR_SERVER")
+                                end
+                            end
+                            vehicleData.lastVehicleHealth = currentHealth
+                        else
+                            -- Player switched vehicles, update tracking
+                            vehicleData.lastVehicle = vehicle
+                            vehicleData.lastVehicleHealth = GetVehicleEngineHealth(vehicle)
+                        end
+                    else
+                        -- Player not in vehicle, reset speeding state
+                        if playerSpeedingData[playerId] then
+                            if playerSpeedingData[playerId].alertActive then
+                                ClearSpeedingAlertForPlayer(playerId)
+                            end
+                            playerSpeedingData[playerId].isCurrentlySpeeding = false
+                            playerSpeedingData[playerId].speedingStartTime = 0
+                        end
                     end
                 end
             end
         end
     end
+
+    for trackedPlayerId, speedData in pairs(playerSpeedingData) do
+        if not robbersActive[trackedPlayerId] or SafeGetPlayerName(trackedPlayerId) == nil then
+            if speedData.alertActive then
+                ClearSpeedingAlertForPlayer(trackedPlayerId)
+            end
+            playerSpeedingData[trackedPlayerId] = nil
+            playerVehicleData[trackedPlayerId] = nil
+        end
+    end
+
     return true
 end, 1000, 5000, 2)
 
@@ -2019,6 +2125,7 @@ SendToJail = function(playerId, durationSeconds, arrestingOfficerId, arrestOptio
     jail[pIdNum] = { startTime = os.time(), duration = finalDurationSeconds, remainingTime = finalDurationSeconds, arrestingOfficer = arrestingOfficerId }
     wantedPlayers[pIdNum] = { wantedLevel = 0, stars = 0, lastCrimeTime = 0, crimesCommitted = {} } -- Reset wanted
     SafeTriggerClientEvent('cnr:wantedLevelSync', pIdNum, wantedPlayers[pIdNum])
+    ClearSpeedingAlertForPlayer(pIdNum)
     SafeTriggerClientEvent('cnr:sendToJail', pIdNum, finalDurationSeconds, Config.PrisonLocation)
     SafeTriggerClientEvent('chat:addMessage', pIdNum, { args = {"^1Jail", string.format("You have been jailed for %d seconds.", finalDurationSeconds)} })
     Log(string.format("Player %s jailed for %ds. Officer: %s. Options: %s", pIdNum, finalDurationSeconds, arrestingOfficerId or "N/A", json.encode(arrestOptions)), "info", "CNR_SERVER")
@@ -2649,6 +2756,94 @@ local function BuildAdminLiveMapPayload()
 
     return payload
 end
+
+local function NormalizeTrackedRole(roleName)
+    local normalizedRole = tostring(roleName or "citizen"):lower()
+    if normalizedRole == "civilian" then
+        normalizedRole = "citizen"
+    end
+
+    if normalizedRole ~= "cop" and normalizedRole ~= "robber" and normalizedRole ~= "citizen" then
+        return "citizen"
+    end
+
+    return normalizedRole
+end
+
+local function BuildRoleMapMemberSnapshot(playerId)
+    local targetId = tonumber(playerId)
+    if not targetId or targetId <= 0 or SafeGetPlayerName(targetId) == nil then
+        return nil
+    end
+
+    local targetData = GetCnrPlayerData(targetId) or {}
+    local ped = GetPlayerPed(targetId)
+    local coords = nil
+    local heading = 0.0
+
+    if ped and ped ~= 0 and DoesEntityExist(ped) then
+        coords = GetEntityCoords(ped)
+        if type(GetEntityHeading) == "function" then
+            heading = GetEntityHeading(ped) or 0.0
+        end
+    end
+
+    return {
+        serverId = targetId,
+        name = SafeGetPlayerName(targetId) or ("Player " .. tostring(targetId)),
+        role = NormalizeTrackedRole(targetData.role),
+        coords = CloneVectorCoords(coords),
+        heading = heading
+    }
+end
+
+local function BuildRoleMapPayloadForRole(groupRole)
+    local normalizedRole = NormalizeTrackedRole(groupRole)
+    local payload = {
+        role = normalizedRole,
+        members = {},
+        generatedAt = os.time()
+    }
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local snapshot = BuildRoleMapMemberSnapshot(playerId)
+        if snapshot and snapshot.role == normalizedRole and snapshot.coords then
+            payload.members[#payload.members + 1] = snapshot
+        end
+    end
+
+    table.sort(payload.members, function(a, b)
+        return (a.serverId or 0) < (b.serverId or 0)
+    end)
+
+    return payload
+end
+
+local function PushRoleMapUpdate(targetPlayerId)
+    if targetPlayerId then
+        local viewerId = tonumber(targetPlayerId)
+        local viewerData = viewerId and GetCnrPlayerData(viewerId) or nil
+        TriggerClientEvent('cnr:receiveRoleMapData', viewerId, BuildRoleMapPayloadForRole(viewerData and viewerData.role or "citizen"))
+        return
+    end
+
+    local payloadByRole = {}
+    for _, playerId in ipairs(GetPlayers()) do
+        local viewerId = tonumber(playerId)
+        local viewerData = viewerId and GetCnrPlayerData(viewerId) or nil
+        local viewerRole = NormalizeTrackedRole(viewerData and viewerData.role or "citizen")
+        if not payloadByRole[viewerRole] then
+            payloadByRole[viewerRole] = BuildRoleMapPayloadForRole(viewerRole)
+        end
+
+        TriggerClientEvent('cnr:receiveRoleMapData', viewerId, payloadByRole[viewerRole])
+    end
+end
+
+PerformanceOptimizer.CreateOptimizedLoop(function()
+    PushRoleMapUpdate()
+    return true
+end, Config.RoleMapRefreshIntervalMs, 10000, 2)
 
 local function ApplyBanToPlayer(targetId, reason, adminName)
     local targetPlayerId = tonumber(targetId)
@@ -4313,7 +4508,7 @@ AddEventHandler('cnr:getBankingDetails', function()
     SendBankingDetails(src)
 end)
 
-local function CloneVectorCoords(coords)
+CloneVectorCoords = function(coords)
     if not coords then
         return nil
     end

@@ -56,6 +56,9 @@ RegisterNetEvent('cnr:updateHeistStage')
 RegisterNetEvent('cnr:policeAlert')
 RegisterNetEvent('cnr:receivePoliceCadData')
 RegisterNetEvent('cnr:receiveAdminLiveMapData')
+RegisterNetEvent('cnr:receiveRoleMapData')
+RegisterNetEvent('cnr:showSpeedingLocationPulse')
+RegisterNetEvent('cnr:clearSpeedingLocationPulse')
 RegisterNetEvent('cnr:receiveRoleTextMessage')
 RegisterNetEvent('cnr:showPdGarageMenu')
 RegisterNetEvent('cnr:pdGarageSpawnApproved')
@@ -79,6 +82,9 @@ Config.SpawnPoints = Config.SpawnPoints or {
     robber = vector3(2126.7, 4794.1, 41.1),
     citizen = vector3(-260.0, -970.0, 31.2)
 }
+Config.SpeedingAlertDurationMs = Config.SpeedingAlertDurationMs or 15000
+Config.SpeedingAlertRadius = Config.SpeedingAlertRadius or 125.0
+Config.SpeedingAlertAlpha = Config.SpeedingAlertAlpha or 80
 
 -- Player-related variables
 local g_isPlayerPedReady = false
@@ -88,6 +94,8 @@ local currentSpikeStrips = {}
 local spikeStripModelHash = GetHashKey("p_ld_stinger_s")
 local pendingAdminLiveMapCallbacks = {}
 local activePoliceDispatchBlips = {}
+activeRoleMapBlips = {}
+activeSpeedingLocationPulses = {}
 local playerStats = {
     heists = 0,
     arrests = 0,
@@ -836,6 +844,183 @@ local function SyncPoliceDispatchBlips(cadCalls)
             RemovePoliceDispatchBlip(callId)
         end
     end
+end
+
+function NormalizeRoleForMap(roleName)
+    local normalizedRole = tostring(roleName or "citizen"):lower()
+    if normalizedRole == "civilian" then
+        normalizedRole = "citizen"
+    end
+
+    if normalizedRole ~= "cop" and normalizedRole ~= "robber" and normalizedRole ~= "citizen" then
+        return "citizen"
+    end
+
+    return normalizedRole
+end
+
+function HasValidMapCoords(coords)
+    return coords and coords.x ~= nil and coords.y ~= nil and coords.z ~= nil
+end
+
+function RemoveRoleMapBlip(serverId)
+    local normalizedServerId = tonumber(serverId)
+    local blip = normalizedServerId and activeRoleMapBlips[normalizedServerId] or nil
+    if blip and DoesBlipExist(blip) then
+        RemoveBlip(blip)
+    end
+    if normalizedServerId then
+        activeRoleMapBlips[normalizedServerId] = nil
+    end
+end
+
+function ClearRoleMapBlips()
+    for serverId, _ in pairs(activeRoleMapBlips) do
+        RemoveRoleMapBlip(serverId)
+    end
+end
+
+function RemoveSpeedingLocationPulse(offenderId)
+    local normalizedOffenderId = tonumber(offenderId)
+    local pulseData = normalizedOffenderId and activeSpeedingLocationPulses[normalizedOffenderId] or nil
+    if pulseData then
+        if pulseData.radiusBlip and DoesBlipExist(pulseData.radiusBlip) then
+            RemoveBlip(pulseData.radiusBlip)
+        end
+        activeSpeedingLocationPulses[normalizedOffenderId] = nil
+    end
+end
+
+function ClearAllSpeedingLocationPulses()
+    for offenderId, _ in pairs(activeSpeedingLocationPulses) do
+        RemoveSpeedingLocationPulse(offenderId)
+    end
+end
+
+function GetRoleMapBlipStyle(groupRole)
+    local normalizedRole = NormalizeRoleForMap(groupRole)
+    if normalizedRole == "cop" then
+        return 1, 38, 0.8, "Officer"
+    elseif normalizedRole == "robber" then
+        return 1, 1, 0.8, "Robber"
+    end
+
+    return 1, 2, 0.75, "Civilian"
+end
+
+function SyncRoleMapBlips(mapData)
+    if not role or role == "" then
+        ClearRoleMapBlips()
+        return
+    end
+
+    local visibleServerIds = {}
+    local localServerId = GetPlayerServerId(PlayerId())
+    local defaultRole = NormalizeRoleForMap(mapData and mapData.role or role)
+
+    for _, member in ipairs((mapData and mapData.members) or {}) do
+        local serverId = tonumber(member and member.serverId)
+        local coords = member and member.coords or nil
+        if serverId and serverId ~= localServerId and HasValidMapCoords(coords) then
+            visibleServerIds[serverId] = true
+
+            local blip = activeRoleMapBlips[serverId]
+            if not blip or not DoesBlipExist(blip) then
+                blip = AddBlipForCoord(coords.x + 0.0, coords.y + 0.0, coords.z + 0.0)
+                activeRoleMapBlips[serverId] = blip
+            else
+                SetBlipCoords(blip, coords.x + 0.0, coords.y + 0.0, coords.z + 0.0)
+            end
+
+            local memberRole = NormalizeRoleForMap(member.role or defaultRole)
+            local sprite, colour, scale, labelPrefix = GetRoleMapBlipStyle(memberRole)
+            SetBlipSprite(blip, sprite)
+            SetBlipColour(blip, colour)
+            SetBlipScale(blip, scale)
+            SetBlipDisplay(blip, 2)
+            SetBlipAlpha(blip, 220)
+            SetBlipAsShortRange(blip, false)
+            SetBlipHighDetail(blip, true)
+            if type(SetBlipPriority) == "function" then
+                SetBlipPriority(blip, 5)
+            end
+            if type(SetBlipCategory) == "function" then
+                SetBlipCategory(blip, 7)
+            end
+            if type(SetBlipShrink) == "function" then
+                SetBlipShrink(blip, true)
+            end
+            if type(ShowHeadingIndicatorOnBlip) == "function" then
+                ShowHeadingIndicatorOnBlip(blip, true)
+            end
+
+            if member.heading ~= nil and type(SetBlipRotation) == "function" then
+                SetBlipRotation(blip, math.floor((tonumber(member.heading) or 0.0) % 360))
+            end
+
+            BeginTextCommandSetBlipName("STRING")
+            AddTextComponentString(string.format("%s %s (#%d)", labelPrefix, tostring(member.name or "Unknown"), serverId))
+            EndTextCommandSetBlipName(blip)
+        end
+    end
+
+    for serverId, _ in pairs(activeRoleMapBlips) do
+        if not visibleServerIds[serverId] then
+            RemoveRoleMapBlip(serverId)
+        end
+    end
+end
+
+function CreateSpeedingLocationPulse(alertData)
+    if role ~= "cop" or type(alertData) ~= "table" then
+        return
+    end
+
+    local offenderId = tonumber(alertData.offenderId)
+    local coords = alertData.coords
+    if not offenderId or offenderId <= 0 or not HasValidMapCoords(coords) then
+        return
+    end
+
+    RemoveSpeedingLocationPulse(offenderId)
+
+    local radius = tonumber(alertData.radius) or tonumber(Config.SpeedingAlertRadius) or 125.0
+    local durationMs = tonumber(alertData.durationMs) or tonumber(Config.SpeedingAlertDurationMs) or 15000
+    local baseAlpha = tonumber(alertData.alpha) or tonumber(Config.SpeedingAlertAlpha) or 80
+    local radiusBlip = AddBlipForRadius(coords.x + 0.0, coords.y + 0.0, coords.z + 0.0, radius + 0.0)
+    local expiresAt = GetGameTimer() + durationMs
+
+    SetBlipColour(radiusBlip, 1)
+    SetBlipAlpha(radiusBlip, math.floor(baseAlpha))
+    SetBlipAsShortRange(radiusBlip, false)
+    SetBlipHighDetail(radiusBlip, true)
+
+    activeSpeedingLocationPulses[offenderId] = {
+        radiusBlip = radiusBlip,
+        expiresAt = expiresAt
+    }
+
+    Citizen.CreateThread(function()
+        while activeSpeedingLocationPulses[offenderId] and activeSpeedingLocationPulses[offenderId].radiusBlip == radiusBlip do
+            local pulse = activeSpeedingLocationPulses[offenderId]
+            if not pulse or not pulse.expiresAt or pulse.expiresAt <= GetGameTimer() or not DoesBlipExist(radiusBlip) then
+                break
+            end
+
+            local cycle = GetGameTimer() % 1200
+            local wave = cycle < 600 and (cycle / 600.0) or ((1200 - cycle) / 600.0)
+            local alpha = math.floor((baseAlpha * 0.55) + (baseAlpha * 0.45 * wave))
+            SetBlipAlpha(radiusBlip, math.max(25, math.min(160, alpha)))
+            Citizen.Wait(75)
+        end
+
+        if activeSpeedingLocationPulses[offenderId]
+            and activeSpeedingLocationPulses[offenderId].radiusBlip == radiusBlip
+            and activeSpeedingLocationPulses[offenderId].expiresAt
+            and activeSpeedingLocationPulses[offenderId].expiresAt <= GetGameTimer() then
+            RemoveSpeedingLocationPulse(offenderId)
+        end
+    end)
 end
 
 local function GetRoleSpawnHeading(playerRole)
@@ -3493,6 +3678,12 @@ AddEventHandler('cnr:updatePlayerData', function(newPlayerData)
     playerData = newPlayerData
     playerCash = newPlayerData.money or 0
     role = playerData.role
+    if oldRole ~= role then
+        ClearRoleMapBlips()
+        if role ~= "cop" then
+            ClearAllSpeedingLocationPulses()
+        end
+    end
     local playerPedOnUpdate = PlayerPedId()
     -- Inventory is now handled by cnr:syncInventory event
 
@@ -3706,6 +3897,18 @@ AddEventHandler('cnr:receiveAdminLiveMapData', function(requestId, liveMapData)
     })
 end)
 
+AddEventHandler('cnr:receiveRoleMapData', function(mapData)
+    SyncRoleMapBlips(mapData or {})
+end)
+
+AddEventHandler('cnr:showSpeedingLocationPulse', function(alertData)
+    CreateSpeedingLocationPulse(alertData)
+end)
+
+AddEventHandler('cnr:clearSpeedingLocationPulse', function(offenderId)
+    RemoveSpeedingLocationPulse(offenderId)
+end)
+
 AddEventHandler('cnr:receiveRoleTextMessage', function(messageData)
     local senderName = messageData and messageData.fromName or "Unknown"
     local senderRole = messageData and messageData.fromRole or "player"
@@ -3796,6 +3999,9 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
     if playerData then
         playerData.role = role
     end
+
+    ClearRoleMapBlips()
+    ClearAllSpeedingLocationPulses()
 
     activeRoleActionMenu = nil
     SendNUIMessage({
