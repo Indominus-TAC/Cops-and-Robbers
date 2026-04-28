@@ -2339,6 +2339,21 @@ local function RequestPdGarageMenu()
     TriggerServerEvent('cnr:requestPdGarageMenu')
 end
 
+_G.CNRPoliceElsBridge = {
+    canUse = function()
+        return role == "cop" or (playerData and (playerData.isAdmin == true or playerData.role == "admin"))
+    end,
+    isInputBlocked = function()
+        return isInventoryOpen or adminPanelVisible or activeRoleActionMenu
+    end,
+    getTrackedPdGarageVehicle = function(vehicle)
+        return GetTrackedPdGarageVehicle(vehicle)
+    end,
+    notify = function(message)
+        ShowNotification(message)
+    end
+}
+
 local function ClearDroppedWorldItemHelpText()
     activeDroppedItemHelpText = nil
 end
@@ -5556,6 +5571,8 @@ end)
 -- Contraband Dealers
 -- ====================================================================
 
+;(function()
+
 local contrabandDealerBlips = {}
 local contrabandDealerPeds = {}
 local activityBlips = {
@@ -6551,6 +6568,8 @@ AddEventHandler('onResourceStop', function(resourceName)
     end
 end)
 
+end)()
+
 -- =====================================
 --     CONSOLIDATED EVENT HANDLERS
 -- =====================================
@@ -6979,6 +6998,8 @@ RegisterNUICallback('adminRemoveInventoryItem', function(data, cb)
     TriggerServerEvent('cnr:adminRemoveInventoryItem', targetId, itemId, quantity)
     cb({ success = true })
 end)
+
+;(function()
 
 local function SpawnRequestedRoleVehicle(requestedRole)
     local normalizedRole = requestedRole == "civilian" and "citizen" or (requestedRole or role or playerData.role or "citizen")
@@ -7699,6 +7720,8 @@ Citizen.CreateThread(function()
         end
     end
 end)
+
+end)()
 
 -- Initialize consolidated client systems
 Citizen.CreateThread(function()

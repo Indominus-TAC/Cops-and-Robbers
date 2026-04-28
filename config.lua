@@ -76,6 +76,46 @@ Config.PoliceVehicles   = {
 }
 Config.CivilianVehicles = { "sultan", "futo", "blista", "banshee", "elegy2", "stratum", "issi2", "prairie" }
 
+-- FiveM-native emergency lighting controller modeled after classic ELS concepts.
+-- This provides synced light stages, extras-based flashing, takedowns, and scene
+-- lights without relying on single-player ScriptHook/ASI binaries.
+Config.PoliceELS = {
+    enabled = true,
+    allowEmergencyClassFallback = true,
+    showEntryHint = true,
+    stateBagKey = "cnrEls",
+    keybinds = {
+        stageCycleKey = "J",
+        sirenToggleKey = "L",
+        warningToggleKey = "O",
+        secondaryToggleKey = "P",
+        patternCycleKey = "U",
+        takedownToggleKey = "RBRACKET",
+        sceneToggleKey = "N"
+    },
+    defaultProfile = {
+        useNativeEmergencyLights = true,
+        allowSecondaryAtStage2 = false,
+        cruiseExtras = { 1, 4 },
+        primaryExtras = { 1, 2, 3, 4 },
+        warningExtras = { 5, 6 },
+        secondaryExtras = { 7, 8, 9 },
+        takedownExtras = { 10 },
+        sceneExtras = { 11, 12 },
+        flashIntervals = { 240, 150, 95 }
+    },
+    vehicleProfiles = {
+        police = {
+            cruiseExtras = { 1, 4 },
+            primaryExtras = { 1, 2, 3, 4 },
+            warningExtras = { 5, 6 },
+            secondaryExtras = { 7, 8, 9 },
+            takedownExtras = { 10 },
+            sceneExtras = { 11, 12 }
+        }
+    }
+}
+
 
 -- =========================
 --   Ammu-Nation Store Locations
@@ -2535,6 +2575,15 @@ Config.Keybinds.toggleAdminPanelKey = Config.Keybinds.toggleAdminPanelKey or "F1
 Config.Keybinds.openStore = Config.Keybinds.openStore or 38
 Config.Keybinds.openCharacterEditor = Config.Keybinds.openCharacterEditor or 170
 Config.Keybinds.openInventoryKey = Config.Keybinds.openInventoryKey or "I"
+Config.PoliceELS = Config.PoliceELS or {}
+Config.PoliceELS.keybinds = Config.PoliceELS.keybinds or {}
+Config.PoliceELS.keybinds.stageCycleKey = Config.PoliceELS.keybinds.stageCycleKey or "J"
+Config.PoliceELS.keybinds.sirenToggleKey = Config.PoliceELS.keybinds.sirenToggleKey or "L"
+Config.PoliceELS.keybinds.warningToggleKey = Config.PoliceELS.keybinds.warningToggleKey or "O"
+Config.PoliceELS.keybinds.secondaryToggleKey = Config.PoliceELS.keybinds.secondaryToggleKey or "P"
+Config.PoliceELS.keybinds.patternCycleKey = Config.PoliceELS.keybinds.patternCycleKey or "U"
+Config.PoliceELS.keybinds.takedownToggleKey = Config.PoliceELS.keybinds.takedownToggleKey or "RBRACKET"
+Config.PoliceELS.keybinds.sceneToggleKey = Config.PoliceELS.keybinds.sceneToggleKey or "N"
 
 -- Contraband dealer locations
 Config.ContrabandDealers = {
