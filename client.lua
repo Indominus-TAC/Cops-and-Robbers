@@ -476,6 +476,7 @@ local currentUniformPreset = nil
 local currentEditorCameraMode = "full"
 local currentEditorCameraOrbit = 0.0
 local isRoleSelectionVisible = false
+local hasConfirmedRoleSelectionThisSession = false
 
 -- Character editor UI state
 local editorUI = {
@@ -3864,7 +3865,10 @@ AddEventHandler('playerSpawned', function()
     roleSelectionShownForCurrentDeath = false
 
     -- Only show role selection if player doesn't have a role yet
-    if not role or role == "" then
+    local shouldShowInitialRoleSelection = (not hasConfirmedRoleSelectionThisSession)
+        and (not role or role == "" or role == "citizen")
+
+    if shouldShowInitialRoleSelection then
         isRoleSelectionVisible = true
         SendNUIMessage({ action = 'showRoleSelection', resourceName = GetCurrentResourceName() })
         SetMenuFocus(true, true)
@@ -4013,6 +4017,7 @@ end)
 RegisterNetEvent('cnr:roleSelected')
 AddEventHandler('cnr:roleSelected', function(success, message)
     if success then
+        hasConfirmedRoleSelectionThisSession = true
         isRoleSelectionVisible = false
         SendNUIMessage({ action = 'hideRoleSelection' })
         SetMenuFocus(false, false)
