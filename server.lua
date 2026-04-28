@@ -625,6 +625,37 @@ local function CountPdGarageActiveVehicles(playerId)
     return count
 end
 
+local function BuildPdGarageIssuedVehicleSync()
+    local issuedVehicleNetIds = {}
+
+    for _, state in pairs(pdGaragePlayerState) do
+        if state and type(state.activeVehicles) == "table" then
+            for netId, vehicleData in pairs(state.activeVehicles) do
+                local normalizedNetId = tonumber(netId)
+                if normalizedNetId and normalizedNetId > 0 then
+                    issuedVehicleNetIds[tostring(normalizedNetId)] = {
+                        model = vehicleData and vehicleData.model or "unknown",
+                        spawnedAt = vehicleData and vehicleData.spawnedAt or 0
+                    }
+                end
+            end
+        end
+    end
+
+    return issuedVehicleNetIds
+end
+
+local function BroadcastPdGarageIssuedVehicleSync(targetPlayerId)
+    local payload = BuildPdGarageIssuedVehicleSync()
+    local target = tonumber(targetPlayerId)
+    if target and target > 0 then
+        TriggerClientEvent('cnr:syncPdGarageIssuedVehicles', target, payload)
+        return
+    end
+
+    TriggerClientEvent('cnr:syncPdGarageIssuedVehicles', -1, payload)
+end
+
 local function IsPlayerNearPdGarage(playerId, extraRadius)
     local garage = GetPdGarageConfig()
     if not garage or not garage.interaction or not garage.interaction.location then
@@ -1131,6 +1162,7 @@ SetPlayerRole = function(playerId, role, skipNotify)
     if role ~= "cop" then
         ResetPdGaragePlayerState(pIdNum)
         TriggerClientEvent('cnr:cleanupPdGarageVehicles', pIdNum)
+        BroadcastPdGarageIssuedVehicleSync()
     end
 end
 
@@ -2725,6 +2757,7 @@ AddEventHandler('playerDropped', function(reason)
     end
 
     ResetPdGaragePlayerState(src)
+    BroadcastPdGarageIssuedVehicleSync()
 
     -- Use enhanced memory management system
     if MemoryManager then
@@ -3513,6 +3546,8 @@ AddEventHandler('cnr:requestPdGarageMenu', SecurityEnhancements.SecureEventHandl
     local garage = GetPdGarageConfig()
     local vehicles = BuildPdGarageVehicleList(accessProfile)
 
+    BroadcastPdGarageIssuedVehicleSync(src)
+
     TriggerClientEvent('cnr:showPdGarageMenu', src, {
         title = 'Mission Row PD Garage',
         subtitle = 'Authorized police vehicles, recovery, repair, and cleanup tools.',
@@ -3526,6 +3561,17 @@ AddEventHandler('cnr:requestPdGarageMenu', SecurityEnhancements.SecureEventHandl
             deleteAbandoned = true
         }
     })
+end))
+
+RegisterServerEvent('cnr:requestPdGarageIssuedVehicleSync')
+RegisterNetEvent('cnr:requestPdGarageIssuedVehicleSync')
+AddEventHandler('cnr:requestPdGarageIssuedVehicleSync', SecurityEnhancements.SecureEventHandler('cnr:requestPdGarageIssuedVehicleSync', function(playerId)
+    local src = tonumber(playerId) or tonumber(source)
+    if not src or src <= 0 then
+        return
+    end
+
+    BroadcastPdGarageIssuedVehicleSync(src)
 end))
 
 RegisterServerEvent('cnr:requestPdGarageVehicleSpawn')
@@ -3627,6 +3673,8 @@ AddEventHandler('cnr:registerPdGarageVehicle', SecurityEnhancements.SecureEventH
         model = string.lower(tostring(modelName or "unknown")),
         spawnedAt = os.time()
     }
+
+    BroadcastPdGarageIssuedVehicleSync()
 end))
 
 RegisterServerEvent('cnr:unregisterPdGarageVehicle')
@@ -3644,6 +3692,7 @@ AddEventHandler('cnr:unregisterPdGarageVehicle', SecurityEnhancements.SecureEven
     end
 
     state.activeVehicles[tostring(netId)] = nil
+    BroadcastPdGarageIssuedVehicleSync()
 end))
 
 -- Handle role selection request

@@ -60,6 +60,7 @@ RegisterNetEvent('cnr:receiveRoleTextMessage')
 RegisterNetEvent('cnr:showPdGarageMenu')
 RegisterNetEvent('cnr:pdGarageSpawnApproved')
 RegisterNetEvent('cnr:cleanupPdGarageVehicles')
+RegisterNetEvent('cnr:syncPdGarageIssuedVehicles')
 
 -- =====================================
 --           VARIABLES
@@ -167,6 +168,7 @@ local adminSpectateTargetServerId = nil
 local adminPanelVisible = false
 local activeRoleActionMenu = nil
 local trackedPdGarageVehicles = {}
+_G.sharedPdGarageIssuedVehicles = _G.sharedPdGarageIssuedVehicles or {}
 local CreatePersistentRoleVehicle
 local adminPanelRequestStartedAt = 0
 local ADMIN_PANEL_REQUEST_GUARD_MS = 1500
@@ -2594,6 +2596,21 @@ AddEventHandler('cnr:cleanupPdGarageVehicles', function()
     CleanupPdGarageVehicles()
 end)
 
+AddEventHandler('cnr:syncPdGarageIssuedVehicles', function(issuedVehicles)
+    _G.sharedPdGarageIssuedVehicles = {}
+
+    if type(issuedVehicles) ~= "table" then
+        return
+    end
+
+    for netId, vehicleData in pairs(issuedVehicles) do
+        local normalizedNetId = tonumber(netId)
+        if normalizedNetId and normalizedNetId > 0 then
+            _G.sharedPdGarageIssuedVehicles[tostring(normalizedNetId)] = vehicleData or true
+        end
+    end
+end)
+
 AddEventHandler('cnr:adminTeleportToCoords', function(coords)
     local ped = PlayerPedId()
     if not ped or ped == 0 or not coords then
@@ -3273,6 +3290,18 @@ local function CleanupLegacyPoliceVehiclesNearPdGarage()
 
     for _, vehicle in ipairs(GetGamePool('CVehicle') or {}) do
         if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) and policeModelHashes[GetEntityModel(vehicle)] then
+            local isSharedIssuedVehicle = false
+            if NetworkGetEntityIsNetworked(vehicle) then
+                local netId = NetworkGetNetworkIdFromEntity(vehicle)
+                if netId and netId ~= 0 then
+                    isSharedIssuedVehicle = (_G.sharedPdGarageIssuedVehicles or {})[tostring(netId)] ~= nil
+                end
+            end
+
+            if GetTrackedPdGarageVehicle(vehicle) or isSharedIssuedVehicle then
+                goto continue
+            end
+
             local driver = GetPedInVehicleSeat(vehicle, -1)
             local hasPlayerOccupant = false
             local maxPassengers = GetVehicleMaxNumberOfPassengers(vehicle)
@@ -3304,24 +3333,106 @@ local function CleanupLegacyPoliceVehiclesNearPdGarage()
                 end
             end
         end
+
+        ::continue::
     end
+end
+
+local function GetPdGarageSpawnBounds(padding)
+    local garage = GetPdGarageConfig()
+    if not garage or type(garage.spawnPoints) ~= "table" or #garage.spawnPoints == 0 then
+        return nil
+    end
+
+    local extraPadding = tonumber(padding) or 8.0
+    local minX, minY, minZ = nil, nil, nil
+    local maxX, maxY, maxZ = nil, nil, nil
+
+    for _, spawnPoint in ipairs(garage.spawnPoints) do
+        local coords = GetEntryCoords(spawnPoint)
+        if coords then
+            minX = minX and math.min(minX, coords.x) or coords.x
+            minY = minY and math.min(minY, coords.y) or coords.y
+            minZ = minZ and math.min(minZ, coords.z) or coords.z
+            maxX = maxX and math.max(maxX, coords.x) or coords.x
+            maxY = maxY and math.max(maxY, coords.y) or coords.y
+            maxZ = maxZ and math.max(maxZ, coords.z) or coords.z
+        end
+    end
+
+    if not minX then
+        return nil
+    end
+
+    return {
+        minX = minX - extraPadding,
+        minY = minY - extraPadding,
+        minZ = minZ - 4.0,
+        maxX = maxX + extraPadding,
+        maxY = maxY + extraPadding,
+        maxZ = maxZ + 6.0
+    }
+end
+
+local function SuppressPdGarageAmbientVehicleSpawns()
+    local bounds = GetPdGarageSpawnBounds()
+    if not bounds then
+        return
+    end
+
+    if type(RemoveVehiclesFromGeneratorsInArea) == "function" then
+        RemoveVehiclesFromGeneratorsInArea(
+            bounds.minX,
+            bounds.minY,
+            bounds.minZ,
+            bounds.maxX,
+            bounds.maxY,
+            bounds.maxZ,
+            false
+        )
+    end
+
+    CleanupLegacyPoliceVehiclesNearPdGarage()
 end
 
 -- Call this on resource start and when player spawns
 Citizen.CreateThread(function()
     Citizen.Wait(2000)
+    TriggerServerEvent('cnr:requestPdGarageIssuedVehicleSync')
     SpawnCopStorePed()
     SpawnRobberStorePeds()
     SpawnPublicStorePeds()
     SpawnRobberVehicles() -- Added vehicle spawning for robbers
     SpawnPoliceVehicles()
-    CleanupLegacyPoliceVehiclesNearPdGarage()
+    SuppressPdGarageAmbientVehicleSpawns()
     UpdatePublicStoreBlips()
     -- Initial blip setup based on current role
     if role == "cop" then
         UpdateCopStoreBlips()
     elseif role == "robber" then
         UpdateRobberStoreBlips()
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        local garage = GetPdGarageConfig()
+        if garage then
+            local waitTime = 5000
+            local garageLocation = GetPdGarageInteractionLocation()
+            local playerPed = PlayerPedId()
+            if garageLocation and playerPed and playerPed ~= 0 then
+                local playerCoords = GetEntityCoords(playerPed)
+                if #(playerCoords - garageLocation) <= 180.0 then
+                    waitTime = 1500
+                end
+            end
+
+            SuppressPdGarageAmbientVehicleSpawns()
+            Citizen.Wait(waitTime)
+        else
+            Citizen.Wait(10000)
+        end
     end
 end)
 
@@ -3682,6 +3793,8 @@ AddEventHandler('cnr:setPlayerRole', function(newRole)
     if role ~= "cop" then
         SyncPoliceDispatchBlips({})
         CleanupPdGarageVehicles()
+    else
+        TriggerServerEvent('cnr:requestPdGarageIssuedVehicleSync')
     end
 
     UpdateActivityBlips()
