@@ -196,29 +196,6 @@ local function GetLocalPoliceElsVehicle()
     return vehicle
 end
 
-local function SetVehicleExtraSafe(vehicle, extraId, enabled)
-    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
-        return
-    end
-
-    local numericExtra = math.floor(tonumber(extraId) or 0)
-    if numericExtra <= 0 or numericExtra > 14 then
-        return
-    end
-
-    if type(DoesExtraExist) == "function" and not DoesExtraExist(vehicle, numericExtra) then
-        return
-    end
-
-    SetVehicleExtra(vehicle, numericExtra, enabled and 0 or 1)
-end
-
-local function SetAllVehicleExtrasDisabled(vehicle)
-    for extraId = 1, 14 do
-        SetVehicleExtraSafe(vehicle, extraId, false)
-    end
-end
-
 local function SetVehicleIndicatorState(vehicle, leftEnabled, rightEnabled)
     if type(SetVehicleIndicatorLights) ~= "function" then
         return
@@ -252,8 +229,6 @@ local function ApplyPoliceElsStateToVehicle(vehicle, state)
     local emergencyLightsActive = state.stage > 0
     local sirenAudible = emergencyLightsActive and state.siren
     local runtime = GetPoliceElsRuntime(vehicle)
-
-    SetAllVehicleExtrasDisabled(vehicle)
 
     if runtime.initialized and runtime.stage == state.stage and runtime.siren == state.siren then
         return

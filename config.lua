@@ -84,7 +84,7 @@ Config.PoliceELS = {
     stateBagKey = "cnrEls",
     keybinds = {
         lightsToggleKey = "J",
-        sirenToggleKey = "L"
+        sirenToggleKey = "K"
     }
 }
 
