@@ -6,6 +6,7 @@ local bridge = _G.CNRPoliceElsBridge or {}
 local localPoliceElsFallbackState = {}
 local policeElsAllowedModelNames = nil
 local policeElsAllowedModelHashes = nil
+local policeElsRuntimeState = {}
 local lastPoliceElsHintVehicle = 0
 
 local function Notify(message)
@@ -227,30 +228,45 @@ local function SetVehicleIndicatorState(vehicle, leftEnabled, rightEnabled)
     SetVehicleIndicatorLights(vehicle, 1, leftEnabled == true)
 end
 
+local function GetPoliceElsRuntime(vehicle)
+    local runtime = policeElsRuntimeState[vehicle]
+    if runtime then
+        return runtime
+    end
+
+    runtime = {
+        initialized = false,
+        stage = -1,
+        siren = false
+    }
+    policeElsRuntimeState[vehicle] = runtime
+    return runtime
+end
+
 local function ApplyPoliceElsStateToVehicle(vehicle, state)
     if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then
         return
     end
 
     state = SanitizePoliceElsState(state)
+    local emergencyLightsActive = state.stage > 0
+    local sirenAudible = emergencyLightsActive and state.siren
+    local runtime = GetPoliceElsRuntime(vehicle)
 
     SetAllVehicleExtrasDisabled(vehicle)
 
-    local emergencyLightsActive = state.stage > 0
-    local sirenAudible = emergencyLightsActive and state.siren
+    if runtime.initialized and runtime.stage == state.stage and runtime.siren == state.siren then
+        return
+    end
 
     SetVehicleSiren(vehicle, emergencyLightsActive)
 
     if type(SetVehicleHasMutedSirens) == "function" then
-        SetVehicleHasMutedSirens(vehicle, not sirenAudible)
+        SetVehicleHasMutedSirens(vehicle, emergencyLightsActive and not sirenAudible or false)
     end
 
     if type(SetSirenWithNoDriver) == "function" then
         SetSirenWithNoDriver(vehicle, emergencyLightsActive)
-    end
-
-    if type(SetVehicleLights) == "function" then
-        SetVehicleLights(vehicle, emergencyLightsActive and 2 or 0)
     end
 
     if type(SetVehicleInteriorlight) == "function" then
@@ -262,6 +278,10 @@ local function ApplyPoliceElsStateToVehicle(vehicle, state)
     end
 
     SetVehicleIndicatorState(vehicle, false, false)
+
+    runtime.initialized = true
+    runtime.stage = state.stage
+    runtime.siren = state.siren
 end
 
 local function UpdateLocalPoliceElsState(mutator, notificationText)
